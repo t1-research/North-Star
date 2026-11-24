@@ -27,16 +27,23 @@ latency_interval_seconds: 60    # latency probe
 speedtest_interval_seconds: 3600  # automatic speed test (hourly)
 service_check_interval_seconds: 120  # down detector (HTTP health checks)
 
-# Services to watch (the down detector). Each gets an HTTP GET every
-# service_check_interval_seconds. A service is declared down after 2
-# consecutive failures, and recovers on the first success after that.
-# When the internet itself is down, checks are skipped and every service
-# shows as "unknown" instead of a pile of false outages.
+# Services to watch (the down detector). Each gets a HEAD request (no body
+# downloaded; falls back to a 1 KiB GET when HEAD doesn't give a clean
+# answer). A service is declared down after 2 consecutive failures, and
+# recovers on the first success after that. When the internet itself is
+# down, checks are skipped and every service shows as "unknown" instead of
+# a pile of false outages.
+# Each service may set its own interval_seconds (default: the global
+# service_check_interval_seconds above). The Vercel sites are checked every
+# 3 hours on purpose — checking them every 2 minutes would run up
+# Vercel usage for no benefit.
 services:
   - name: "T1 Research"
     url: "https://t1-research.vercel.app/"
+    interval_seconds: 10800  # 3 hours — keep Vercel usage down
   - name: "Walton Press Co"
     url: "https://waltonpressco.vercel.app/"
+    interval_seconds: 10800  # 3 hours — keep Vercel usage down
   - name: "Google"
     url: "https://www.google.com"
   - name: "GitHub"
