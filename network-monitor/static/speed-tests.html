@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>North Star Monitor — Speed Tests</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">&#9733;</div>
+    <div class="title">
+      <h1>North Star <span>Monitor</span></h1>
+      <p>Home network &middot; Deco mesh &middot; 192.168.68.0/24</p>
+    </div>
+    <div class="header-right">
+      <span class="pill" id="net-pill"><span class="dot ok" id="net-dot"></span><span id="net-text">Checking&hellip;</span></span>
+      <span class="pill" id="svc-pill"><span class="dot unknown" id="svc-dot"></span><span id="svc-text">Services&hellip;</span></span>
+      <span class="updated" id="updated"></span>
+    </div>
+  </header>
+
+  <nav class="main-nav" id="main-nav" aria-label="Dashboard pages"></nav>
+
+  <section class="card">
+    <h2>Speed tests &mdash; last 7 days</h2>
+    <p class="hint">Automatic tests every 15 minutes, plus any you run on demand.</p>
+    <div class="card-actions"><button id="btn-speedtest" onclick="runSpeedtest()">Run speed test</button></div>
+    <div class="chart-box"><canvas id="speed-chart"></canvas></div>
+    <div class="empty" id="speed-empty" style="display:none">No speed tests yet &mdash; hit "Run speed test" above.</div>
+  </section>
+
+  <section class="card">
+    <h2>Recent speed tests</h2>
+    <p class="hint">The 10 most recent tests. The chart above covers the full 7 days.</p>
+    <table>
+      <thead><tr><th>When</th><th>Download</th><th>Upload</th><th>Ping</th></tr></thead>
+      <tbody id="speed-history-rows"><tr><td colspan="4" class="empty">Loading&hellip;</td></tr></tbody>
+    </table>
+  </section>
+
+  <footer>North Star Monitor v1.8 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span><button class="ghost footer-btn" id="btn-check-updates" style="display:none" onclick="checkUpdates()">Check for updates</button><span id="update-check-info" style="display:none"></span></footer>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+'use strict';
+// Speed Tests: speed chart, on-demand test button, recent-tests table.
+
+function updateSpeedButton(st) {
+  const btn = $('btn-speedtest');
+  if (st.speedtest_running) {
+    btn.disabled = true; btn.textContent = 'Testing…';
+  } else {
+    btn.disabled = false; btn.textContent = 'Run speed test';
+  }
+}
+
+function renderSpeedHistory(tests) {
+  if (!tests) return; // fetch failed — leave the table as it is
+  if (!tests.length) {
+    $('speed-history-rows').innerHTML = '<tr><td colspan="4" class="empty">No speed tests yet.</td></tr>';
+    return;
+  }
+  const recent = tests.slice(-10).reverse();
+  $('speed-history-rows').innerHTML = recent.map((t) =>
+    '<tr><td>' + fmtTime(t.ts) + '</td>' +
+    '<td>' + t.download_mbps.toFixed(0) + ' Mbps</td>' +
+    '<td>' + t.upload_mbps.toFixed(0) + ' Mbps</td>' +
+    '<td>' + t.ping_ms.toFixed(0) + ' ms</td></tr>'
+  ).join('');
+}
+
+async function runSpeedtest() {
+  const btn = $('btn-speedtest');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  try {
+    await api('/api/speedtest/run', { method: 'POST' });
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Run speed test';
+    alert('Could not start speed test: ' + e.message);
+    return;
+  }
+  // Poll until the test finishes, then refresh the chart and table.
+  const poll = setInterval(async () => {
+    try {
+      const st = await api('/api/status');
+      if (!st.speedtest_running) {
+        clearInterval(poll);
+        refreshSpeedTestsPage();
+        refreshSpeedTestsCharts();
+      }
+    } catch (e) { clearInterval(poll); }
+  }, 5000);
+}
+
+async function refreshSpeedTestsPage() {
+  const shared = await refreshShared();
+  if (shared.status) updateSpeedButton(shared.status);
+}
+
+async function refreshSpeedTestsCharts() {
+  const tests = await refreshSpeedChart();
+  renderSpeedHistory(tests);
+}
+
+refreshSpeedTestsPage();
+refreshSpeedTestsCharts();
+setInterval(refreshSpeedTestsPage, 30000);
+setInterval(refreshSpeedTestsCharts, 120000);
+</script>
+</body>
+</html>
