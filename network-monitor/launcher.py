@@ -24,6 +24,11 @@ What it does:
      If the child fails to stay up 3 times in a row after an update, it
      logs a clear warning that the new version may be broken — and keeps
      retrying (no auto-rollback in v1).
+  6. Console commands: while it runs, type `restart` in the launcher
+     window to restart the monitor (reloads config — no need to kill
+     the console), `update` to check for updates now, `quit` to stop
+     cleanly, `help` for the list. Headless runs (Task Scheduler) have
+     no console, so no commands — everything else works the same.
 
 Your settings live in config.local.yaml (untracked), so `git pull` never
 conflicts with your edits. Rule: edit config.local.yaml on your PC, never
@@ -43,6 +48,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,6 +78,83 @@ def log(msg: str) -> None:
 def _handle_signal(signum, frame):  # noqa: ARG001
     global stopping
     stopping = True
+
+
+# ------------------------------------------------------- console commands
+
+# Console commands (typed in the launcher's console window): the reader
+# thread sets these events and the main loop acts on them once a second —
+# the same consume-once-a-second pattern as the dashboard's update-check
+# trigger file. The reader is a daemon thread: it never blocks shutdown,
+# and it simply doesn't start when there is no console (Task Scheduler,
+# piped stdin), so headless runs are unaffected.
+restart_requested = threading.Event()
+update_requested = threading.Event()
+
+CONSOLE_COMMANDS = ("restart", "update", "quit", "help")
+
+
+def parse_console_command(line: str):
+    """Map one typed line to a command name, or None for blank/unknown
+    input. Case-insensitive; extra words are ignored ('restart now'
+    restarts)."""
+    words = line.strip().lower().split()
+    if not words:
+        return None
+    return words[0] if words[0] in CONSOLE_COMMANDS else None
+
+
+def console_help_text() -> str:
+    return ("Console commands: restart (restart the monitor, reloading "
+            "config), update (check for updates now), quit (stop the "
+            "monitor and launcher), help (this list).")
+
+
+def console_reader_loop(stream, log_fn=log) -> None:
+    """Read command lines until EOF and dispatch them. Runs in a daemon
+    thread; never raises — a dead stdin just ends the loop quietly."""
+    global stopping
+    try:
+        while True:
+            try:
+                line = stream.readline()
+            except (OSError, ValueError):
+                return
+            if not line:  # EOF / stdin closed
+                return
+            cmd = parse_console_command(line)
+            if cmd is None:
+                if line.strip():
+                    log_fn(f"Unknown console command: {line.strip()!r}. "
+                           f"Type 'help' for the list.")
+                continue
+            if cmd == "restart":
+                restart_requested.set()
+            elif cmd == "update":
+                update_requested.set()
+            elif cmd == "quit":
+                stopping = True
+                return
+            elif cmd == "help":
+                log_fn(console_help_text())
+    except Exception as exc:  # never let the reader thread die loudly
+        log_fn(f"Console reader stopped ({exc}).")
+
+
+def start_console_reader() -> bool:
+    """Start the console command thread when stdin is an interactive
+    console. Returns True when the thread is running. Headless runs
+    (no stdin, piped stdin, Task Scheduler) get no thread and no error."""
+    stdin = sys.stdin
+    try:
+        if stdin is None or not stdin.isatty():
+            return False
+    except (OSError, ValueError):
+        return False
+    thread = threading.Thread(target=console_reader_loop, args=(stdin,),
+                              name="console-reader", daemon=True)
+    thread.start()
+    return True
 
 
 # Dashboard update checks: the web app drops a trigger file (in data/) to
@@ -308,6 +391,9 @@ def supervise(python: str, cfg: dict) -> None:
         # footer line stays hidden.)
         now = int(time.time())
         write_update_status(APP_DIR, None, now + interval, interval)
+    if start_console_reader():
+        log("Console commands enabled — type 'help' for the list "
+            "(restart / update / quit).")
 
     quick_failures = 0       # consecutive crashes within HEALTHY_UPTIME_SECONDS
     failures_since_update = 0  # quick failures since the last good update
@@ -349,14 +435,33 @@ def supervise(python: str, cfg: dict) -> None:
                     log(f"Restarting in {delay}s...")
                     time.sleep(delay)
                     break  # restart the child
+                # Console "restart": the same graceful restart an update
+                # pull does, minus the pull — reloads config without
+                # killing the launcher (or the console window). A manual
+                # restart is intentional, so the quick-failure counters
+                # reset instead of counting it as a crash.
+                if restart_requested.is_set():
+                    restart_requested.clear()
+                    log("Restart requested from the console.")
+                    stop_child(child)
+                    quick_failures = 0
+                    failures_since_update = 0
+                    warned_broken = False
+                    break  # outer loop re-checks deps and starts fresh
                 # Dashboard "Check for updates" button: consume the trigger
                 # file (if any) and run the normal check path right now
                 # instead of waiting for the next interval. The loop
                 # already polls every second, so no sleep restructuring
                 # was needed — the trigger is just a second way in.
+                # The console "update" command is a third way in.
                 triggered = take_update_trigger(APP_DIR)
+                console_update = update_requested.is_set()
+                if console_update:
+                    update_requested.clear()
+                    triggered = True
                 if triggered and not (auto_update and repo_root and git_ok):
-                    log("Update check requested from the dashboard, but "
+                    source = "console" if console_update else "dashboard"
+                    log(f"Update check requested from the {source}, but "
                         "auto-update is unavailable (no git repo, no git, "
                         "or auto_update: false).")
                 if (auto_update and repo_root and git_ok
