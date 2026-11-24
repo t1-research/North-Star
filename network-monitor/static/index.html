@@ -229,7 +229,7 @@
 
   <section class="card">
     <h2>Services &mdash; down detector</h2>
-    <p class="hint">Checked every 2 minutes. A service is declared down after 2 failed checks in a row; while the internet is down, everything shows as unknown.</p>
+    <p class="hint">Most services are checked every 2 minutes; your Vercel sites every 3 hours to keep usage down. A service is declared down after 2 failed checks in a row; while the internet is down, everything shows as unknown.</p>
     <div class="services-grid" id="services-grid"><div class="empty">Loading&hellip;</div></div>
   </section>
 
@@ -239,7 +239,7 @@
     <div id="event-list"><div class="empty">Loading&hellip;</div></div>
   </section>
 
-  <footer>North Star Monitor v1.3 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span></footer>
+  <footer>North Star Monitor v1.4 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span></footer>
 </div>
 
 <script>
@@ -270,6 +270,12 @@ function fmtDuration(secs) {
   if (secs < 60) return secs + 's';
   if (secs < 3600) return Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
   return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+}
+function fmtInterval(sec) {
+  if (sec == null) return '';
+  if (sec < 60) return sec + 's';
+  if (sec < 3600) return Math.round(sec / 60) + 'm';
+  return (sec / 3600).toFixed(sec % 3600 === 0 ? 0 : 1) + 'h';
 }
 function esc(s) {
   return String(s == null ? '' : s)
@@ -500,7 +506,7 @@ async function refreshAll() {
         '<div class="svc-name"><span class="dot ' + dotCls + '"></span>' + esc(s.name) + '</div>' +
         '<div class="svc-url mono">' + host + '</div>' +
         '<div class="svc-meta"><span class="' + respCls + '">' + resp + '</span><span>' + uptime + ' &middot; 24h</span></div>' +
-        '<div class="svc-checked">Checked ' + relTime(s.last_check_ts) + '</div>' +
+        '<div class="svc-checked">Checked ' + relTime(s.last_check_ts) + (s.interval_seconds ? ' &middot; every ' + fmtInterval(s.interval_seconds) : '') + '</div>' +
         '</div>';
     }).join('') || '<div class="empty">No services configured — add some in config.yaml.</div>';
   } catch (e) { console.error('services:', e); }
