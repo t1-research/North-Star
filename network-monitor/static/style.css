@@ -70,10 +70,13 @@ button.ghost:hover { background: var(--teal-dim); }
 /* Rendered by app.js (renderNav) so every page gets the same links and
    the active page is always right. Wraps to two rows on narrow phones. */
 .main-nav {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px;
+  position: relative;
   background: var(--card); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 8px 10px; margin-bottom: 18px;
 }
+/* Page links center as a group; Log out stays pinned to the right. */
+.nav-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
 .main-nav a {
   color: var(--muted); text-decoration: none; font-size: 13.5px; font-weight: 600;
   padding: 10px 14px; border-radius: 10px; min-height: 44px;
@@ -81,7 +84,7 @@ button.ghost:hover { background: var(--teal-dim); }
 }
 .main-nav a:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
 .main-nav a.active { color: var(--teal); background: var(--teal-dim); }
-.main-nav .nav-logout { margin-left: auto; }
+.main-nav .nav-logout { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
 
 /* ---------- stat cards ---------- */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
@@ -224,6 +227,10 @@ footer span { color: var(--teal); }
   button { min-height: 44px; }
   button.ghost { min-height: 44px; padding: 8px 14px; }
   .main-nav { gap: 4px; padding: 6px 8px; }
+  /* On phones the links take the full row and Log out drops to its own
+     row on the right — absolute positioning would overlap the links. */
+  .nav-links { flex: 1 1 100%; }
+  .main-nav .nav-logout { position: static; transform: none; margin-left: auto; }
   .main-nav a { padding: 8px 10px; font-size: 13px; }
   .card { padding: 16px; }
   .chart-box { height: 200px; }
