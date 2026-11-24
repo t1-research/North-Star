@@ -29,6 +29,13 @@ What it does:
      the console), `update` to check for updates now, `quit` to stop
      cleanly, `help` for the list. Headless runs (Task Scheduler) have
      no console, so no commands — everything else works the same.
+  7. Web console: the System page in the dashboard sends the same
+     commands (restart / update / quit / help) through trigger files
+     (data/restart_requested, data/shutdown_requested, plus the update
+     trigger from point 3) — the app never talks to the launcher any
+     other way. The launcher's own log lines are also written to
+     data/launcher.log (bounded to the last 500 lines) so the web
+     console can show them; the child's output stays on the console.
 
 Your settings live in config.local.yaml (untracked), so `git pull` never
 conflicts with your edits. Rule: edit config.local.yaml on your PC, never
@@ -70,9 +77,58 @@ MIN_UPDATE_INTERVAL_SECONDS = 10
 # Set by the signal handler; the main loop checks it once a second.
 stopping = False
 
+# The launcher's own log file (data/launcher.log) — the web console's
+# tail source. Bounded: when it passes MAX lines, only the last KEEP
+# lines survive. The child's stdout/stderr are NOT redirected here
+# (its access logs would drown the launcher's own lines).
+LAUNCHER_LOG_NAME = "launcher.log"
+LAUNCHER_LOG_MAX_LINES = 1000
+LAUNCHER_LOG_KEEP_LINES = 500
+_log_lock = threading.Lock()
+
 
 def log(msg: str) -> None:
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [launcher] {msg}", flush=True)
+    line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [launcher] {msg}"
+    print(line, flush=True)
+    _append_log_line(line)
+
+
+def _append_log_line(line: str, app_dir: str = None) -> None:
+    """Append one line to the launcher log file. Best-effort: logging
+    must never break the launcher, so every failure is swallowed.
+    The lock keeps the console-reader thread's log lines from
+    interleaving with the main loop's (and from racing the trim)."""
+    if app_dir is None:
+        app_dir = APP_DIR
+    path = os.path.join(app_dir, "data", LAUNCHER_LOG_NAME)
+    with _log_lock:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except OSError:
+            return
+        _trim_log_file(path)
+
+
+def _trim_log_file(path: str) -> None:
+    """Keep the launcher log bounded: when it passes
+    LAUNCHER_LOG_MAX_LINES, drop everything but the last
+    LAUNCHER_LOG_KEEP_LINES. Runs on every append — cheap at this log
+    volume (a handful of lines per minute at most), and a read failure
+    just leaves the file alone. Callers hold _log_lock."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return
+    if len(lines) <= LAUNCHER_LOG_MAX_LINES:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(lines[-LAUNCHER_LOG_KEEP_LINES:])
+    except OSError:
+        return
 
 
 def _handle_signal(signum, frame):  # noqa: ARG001
@@ -157,31 +213,39 @@ def start_console_reader() -> bool:
     return True
 
 
-# Dashboard update checks: the web app drops a trigger file (in data/) to
-# ask for an immediate update check instead of waiting for the next
-# interval. The launcher consumes (deletes) it and runs the normal check
-# path. After every check it records the last/next check times in
+# Dashboard trigger files: the web app drops a file in data/ to ask the
+# launcher to do something, and the launcher consumes (deletes) it in
+# its 1s loop. The update trigger asks for an immediate update check
+# instead of waiting for the next interval; the restart/shutdown
+# triggers are the web console's restart/quit commands. After every
+# update check the launcher records the last/next check times in
 # data/update_status.json for the dashboard footer.
 UPDATE_TRIGGER_NAME = "update_check_requested"
+RESTART_TRIGGER_NAME = "restart_requested"
+SHUTDOWN_TRIGGER_NAME = "shutdown_requested"
 UPDATE_STATUS_NAME = "update_status.json"
 MANAGED_ENV = "NORTHSTAR_MANAGED"
 
 
-def trigger_path(app_dir: str) -> str:
-    return os.path.join(app_dir, "data", UPDATE_TRIGGER_NAME)
+def trigger_path(app_dir: str, name: str = UPDATE_TRIGGER_NAME) -> str:
+    return os.path.join(app_dir, "data", name)
 
 
-def take_update_trigger(app_dir: str) -> bool:
-    """True if the dashboard asked for an update check: consume the
-    trigger file (delete it) and report it. Safe to call every second —
-    a missing file is the normal case."""
+def take_trigger(app_dir: str, name: str) -> bool:
+    """Consume a trigger file (delete it). True if it was there. Safe
+    to call every second — a missing file is the normal case."""
     try:
-        os.remove(trigger_path(app_dir))
+        os.remove(trigger_path(app_dir, name))
     except FileNotFoundError:
         return False
     except OSError:
         return False
     return True
+
+
+def take_update_trigger(app_dir: str) -> bool:
+    """True if the dashboard asked for an update check."""
+    return take_trigger(app_dir, UPDATE_TRIGGER_NAME)
 
 
 def write_update_status(app_dir: str, last_check_ts, next_check_ts,
@@ -361,6 +425,7 @@ def stop_child(proc) -> None:
 # -------------------------------------------------------------- supervise
 
 def supervise(python: str, cfg: dict) -> None:
+    global stopping
     from app.config import find_repo_root, git_short_sha
 
     repo_root = find_repo_root(APP_DIR)
@@ -443,6 +508,27 @@ def supervise(python: str, cfg: dict) -> None:
                 if restart_requested.is_set():
                     restart_requested.clear()
                     log("Restart requested from the console.")
+                    stop_child(child)
+                    quick_failures = 0
+                    failures_since_update = 0
+                    warned_broken = False
+                    break  # outer loop re-checks deps and starts fresh
+                # Web console (System page) "quit": a shutdown trigger
+                # file stops the launcher cleanly, the same as the
+                # console `quit` / SIGINT — the main loop exits and the
+                # finally block stops the child. Checked before restart
+                # so a quit always wins; a pending restart trigger is
+                # discarded with it (we're stopping anyway, and leaving
+                # it would restart the child once on the next launch).
+                if take_trigger(APP_DIR, SHUTDOWN_TRIGGER_NAME):
+                    log("Shutdown requested from the dashboard.")
+                    take_trigger(APP_DIR, RESTART_TRIGGER_NAME)
+                    stopping = True
+                    break
+                # Web console "restart": the same graceful restart as
+                # the console command above, triggered by a file.
+                if take_trigger(APP_DIR, RESTART_TRIGGER_NAME):
+                    log("Restart requested from the dashboard.")
                     stop_child(child)
                     quick_failures = 0
                     failures_since_update = 0
