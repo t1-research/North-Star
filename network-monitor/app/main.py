@@ -1,6 +1,9 @@
 """North Star Monitor — FastAPI backend + dashboard server.
 
-LAN-only by design: no auth, no internet exposure. Never port-forward this.
+LAN-only by design: no encryption, no internet exposure. Never
+port-forward this. A dashboard password can be set with set_password.py
+(the hash lives in config.local.yaml); without one the dashboard is open
+to your LAN.
 """
 from __future__ import annotations
 
@@ -9,10 +12,10 @@ import threading
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
-from . import db, services
+from . import auth, db, services
 from .collectors import Collectors
 from .config import DB_PATH, PROJECT_ROOT, git_short_sha, load_config
 from .network import is_valid_mac, normalize_mac, subnet_broadcast
@@ -22,6 +25,15 @@ CFG = load_config()
 START_TIME = time.time()
 VERSION = git_short_sha()  # short commit SHA at startup, or "dev"
 STATIC_DIR = os.path.join(PROJECT_ROOT, "static")
+
+# Dashboard password: the hash lives in config.local.yaml only. Without
+# one, auth is disabled and the dashboard stays open — never invent a
+# default password or lock the user out.
+PASSWORD_HASH = CFG.get("dashboard_password_hash") or ""
+AUTH_ENABLED = isinstance(PASSWORD_HASH, str) and bool(PASSWORD_HASH)
+if not AUTH_ENABLED:
+    print("WARNING: No dashboard password set — dashboard is open to your "
+          "LAN. Run set_password.py to protect it.", flush=True)
 
 collectors = Collectors(CFG, DB_PATH)
 
@@ -35,6 +47,80 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="North Star Monitor", lifespan=lifespan)
+
+
+# --------------------------------------------------------------- auth gate
+
+# Paths that work without a session (the login flow itself, plus favicon
+# so browsers don't get a redirect loop on it).
+PUBLIC_PATHS = {"/login", "/api/login", "/api/logout", "/favicon.ico"}
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Gate every request on a valid session cookie, unless auth is
+    disabled (no password configured) or the path is public. API calls
+    get a 401 JSON; page loads get a redirect to /login."""
+    if not AUTH_ENABLED or request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+    if auth.validate_session(request.cookies.get(auth.COOKIE_NAME)):
+        return await call_next(request)
+    if request.url.path.startswith("/api/"):
+        return JSONResponse(status_code=401, content={"detail": "not authenticated"})
+    return RedirectResponse(url="/login", status_code=302)
+
+
+@app.get("/login")
+def login_page(request: Request):
+    """Login page. No password configured, or already signed in, means
+    there is nothing to do here — go to the dashboard."""
+    if not AUTH_ENABLED:
+        return RedirectResponse(url="/", status_code=302)
+    if auth.validate_session(request.cookies.get(auth.COOKIE_NAME)):
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse(os.path.join(STATIC_DIR, "login.html"))
+
+
+@app.post("/api/login")
+async def login(request: Request):
+    """Sign in with JSON {"password": "..."}. On success sets the session
+    cookie (7 days, HttpOnly); wrong passwords count toward the per-IP
+    lockout."""
+    if not AUTH_ENABLED:
+        raise HTTPException(status_code=400, detail="no dashboard password configured")
+    ip = request.client.host if request.client else "unknown"
+    if auth.is_locked_out(ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed logins — try again in a few minutes")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    password = body.get("password") if isinstance(body, dict) else None
+    if not isinstance(password, str) or not auth.verify_password(password, PASSWORD_HASH):
+        auth.record_failed_login(ip)
+        raise HTTPException(status_code=401, detail="wrong password")
+    auth.record_successful_login(ip)
+    response = JSONResponse(content={"ok": True})
+    # No Secure flag: the dashboard is plain HTTP on the LAN, and Secure
+    # would stop the browser sending the cookie at all. Remote access
+    # goes over Tailscale (encrypted), never a raw port forward.
+    response.set_cookie(
+        key=auth.COOKIE_NAME, value=auth.create_session(),
+        httponly=True, samesite="lax", path="/",
+        max_age=auth.SESSION_TTL_SECONDS,
+    )
+    return response
+
+
+@app.post("/api/logout")
+def logout(request: Request):
+    """Sign out: revoke the session and clear the cookie."""
+    auth.revoke_session(request.cookies.get(auth.COOKIE_NAME))
+    response = JSONResponse(content={"ok": True})
+    response.delete_cookie(key=auth.COOKIE_NAME, path="/")
+    return response
 
 
 # -------------------------------------------------------------- dashboard
