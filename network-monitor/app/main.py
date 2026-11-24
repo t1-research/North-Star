@@ -264,6 +264,109 @@ def check_updates():
     return {"status": result}
 
 
+# ------------------------------------------------------------- web console
+
+# The web console (System page) sends the launcher's own console
+# commands — the same four the launcher accepts from its console window
+# (see launcher.py CONSOLE_COMMANDS). Keep the two lists in sync.
+CONSOLE_COMMANDS = ("restart", "update", "quit", "help")
+CONSOLE_HELP = (
+    "Commands: restart — restart the monitor (reloads config); "
+    "update — check for updates now; "
+    "quit — stop the monitor completely (restart it on the PC with "
+    "run_launcher.bat); help — this list.")
+
+
+@app.post("/api/console/command")
+async def console_command(request: Request):
+    """Run a launcher console command from the web console (System page).
+
+    SECURITY — HARD RULE: the command is an allowlist lookup ONLY. The
+    input is never passed to a shell, subprocess, eval, or exec — there
+    is no freeform shell access from the web, ever. restart/update/quit
+    only drop a trigger file for the launcher (the same mechanism as
+    the footer update button); help just returns the command list.
+    restart/update/quit return 409 when no launcher supervises this
+    process (a trigger file with no launcher would sit there stale —
+    a stale shutdown file would kill the next launcher start)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    raw = body.get("command") if isinstance(body, dict) else None
+    if not isinstance(raw, str):
+        raise HTTPException(
+            status_code=400,
+            detail='Send {"command": "restart" | "update" | "quit" | "help"}.')
+    words = raw.strip().lower().split()
+    cmd = words[0] if words else None
+    if cmd not in CONSOLE_COMMANDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown command {raw.strip()!r} — try restart, update, "
+                   "quit, or help.")
+    if cmd == "help":
+        return {"ok": True, "message": CONSOLE_HELP}
+    if cmd == "update":
+        result = updates.request_update_check(PROJECT_ROOT)
+        if result == "no_launcher":
+            raise HTTPException(
+                status_code=409,
+                detail="No launcher is supervising this monitor — run it "
+                       "with run_launcher.bat on the PC.")
+        if result == "already_requested":
+            return {"ok": True,
+                    "message": "Update check already requested — the "
+                               "launcher will check shortly."}
+        return {"ok": True,
+                "message": "Update check requested — the launcher will "
+                           "check GitHub now."}
+    if cmd == "restart":
+        result = updates.request_restart(PROJECT_ROOT)
+        if result == "no_launcher":
+            raise HTTPException(
+                status_code=409,
+                detail="No launcher is supervising this monitor — run it "
+                       "with run_launcher.bat on the PC.")
+        if result == "already_requested":
+            return {"ok": True,
+                    "message": "Restart already requested — waiting for "
+                               "the launcher."}
+        return {"ok": True,
+                "message": "Restart requested — the monitor will restart "
+                           "in a few seconds."}
+    # cmd == "quit"
+    result = updates.request_shutdown(PROJECT_ROOT)
+    if result == "no_launcher":
+        raise HTTPException(
+            status_code=409,
+            detail="No launcher is supervising this monitor — run it "
+                   "with run_launcher.bat on the PC.")
+    if result == "already_requested":
+        return {"ok": True,
+                "message": "Shutdown already requested — the monitor is "
+                           "stopping."}
+    return {"ok": True,
+            "message": "Shutdown requested — the monitor is stopping. "
+                       "Restart it on the PC with run_launcher.bat."}
+
+
+@app.get("/api/console/log")
+def console_log(lines: int = 100):
+    """Tail of the launcher's log file (data/launcher.log) for the web
+    console. `lines` caps the tail (default 100, clamped 1–500). A
+    missing file (standalone run, or the launcher hasn't logged yet) is
+    an empty list, not an error."""
+    lines = max(1, min(lines, 500))
+    try:
+        with open(updates.log_path(PROJECT_ROOT), "r", encoding="utf-8",
+                  errors="replace") as f:
+            all_lines = f.read().splitlines()
+    except OSError:
+        return {"lines": []}
+    return {"lines": all_lines[-lines:]}
+
+
 @app.post("/api/deco/reboot")
 async def reboot_deco(request: Request):
     """Restart Deco mesh units, individually or in any combination.
