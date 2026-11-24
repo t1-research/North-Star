@@ -22,8 +22,8 @@ it remotely, use Tailscale (your PC's 100.x address, same port 8080).
 | Down detector | HEAD health checks for the services in config.yaml (per-service intervals; Vercel sites once a day); down after 2 consecutive failures, recovery on the first success. GitHub, Discord, and Cloudflare cards also show the vendor's own reported status from its official status feed |
 | Wake-on-LAN | Magic packet buttons for devices with `wol: true` in config.yaml |
 | Login (optional) | Password set with `python set_password.py`; session cookie lasts 7 days; 5 failed logins lock an IP out for 5 minutes |
-| Auto-updates (launcher) | `launcher.py` polls GitHub, pulls new commits, and restarts the monitor — see below |
-| Dashboard | Status cards, 24h latency chart, 7d speed chart, device table, service status grid, event log |
+| Auto-updates (launcher) | `launcher.py` polls GitHub, pulls new commits, and restarts the monitor — see below. The dashboard footer has a Check for updates button (launcher only) to run a check immediately, and shows when the last check ran and when the next one is due |
+| Dashboard | Status cards, 24h latency chart, 7d speed chart, device table, service status grid, event log. Responsive layout for phones and desktop; the device list has Connected / Disconnected / All filter tabs, and a Sweep offline button removes stale offline rows (config-defined devices are never swept) |
 
 Data lives in `data/monitor.db` (SQLite). Delete it any time to start fresh.
 
@@ -48,7 +48,7 @@ devices with no manual name are identified in this priority order:
 A name in config.yaml **always wins** and is never overwritten — manually
 named devices aren't even probed. The shipped config names nothing: every
 device identifies itself, and the only `devices` entries are nameless
-WoL enables for the gaming PC (Wi-Fi + Ethernet). Discovered names are cached in memory
+WoL enabled for the gaming PC (Ethernet). Discovered names are cached in memory
 (re-probed at most once an hour; still-unnamed devices are re-probed on
 every scan, since a sleeping phone may answer next time). The dashboard
 shows the effective name plus a small source tag on auto-discovered names
