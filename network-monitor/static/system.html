@@ -44,23 +44,46 @@
     <p class="hint" id="deco-hint" style="display:none">Restarting is off until the Deco password is set — add <code>deco: {password: &quot;...&quot;}</code> (your Deco app password) to <code>config.local.yaml</code> on the PC, then restart the monitor.</p>
   </section>
 
-  <footer>North Star Monitor v1.9 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span><button class="ghost footer-btn" id="btn-check-updates" style="display:none" onclick="checkUpdates()">Check for updates</button><span id="update-check-info" style="display:none"></span></footer>
+  <section class="card" id="console-section">
+    <h2>Console</h2>
+    <p class="hint">The launcher&rsquo;s console, from here — the same commands as the PC&rsquo;s console window, without going to the PC. Commands are a fixed list (restart, update, quit, help); there is no shell access from the web.</p>
+    <p class="hint" id="console-unmanaged-hint" style="display:none">The monitor isn&rsquo;t running under the launcher right now, so restart / update / quit won&rsquo;t do anything — start it with run_launcher.bat on the PC. Help still works.</p>
+    <div class="console-pane" id="console-output" aria-live="polite"></div>
+    <div class="console-input-row">
+      <span class="console-prompt">&gt;</span>
+      <input id="console-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type a command (restart, update, quit, help) and press Enter" onkeydown="if (event.key === 'Enter') sendConsoleCommandFromInput()">
+      <button onclick="sendConsoleCommandFromInput()">Send</button>
+    </div>
+    <div class="console-actions">
+      <button class="ghost" onclick="sendConsoleCommand('restart')">Restart</button>
+      <button class="ghost" onclick="sendConsoleCommand('update')">Update</button>
+      <button class="ghost console-danger" onclick="sendConsoleCommand('quit')">Quit</button>
+    </div>
+  </section>
+
+  <footer>North Star Monitor v2.0 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span><button class="ghost footer-btn" id="btn-check-updates" style="display:none" onclick="checkUpdates()">Check for updates</button><span id="update-check-info" style="display:none"></span></footer>
 </div>
 
 <script src="/static/app.js"></script>
 <script>
 'use strict';
-// System: network controls. The Deco restart list renders from the
-// /api/status snapshot the shared refresh already fetches (see app.js:
-// renderDecoUnits). Nothing else lives here yet.
+// System: network controls + the web console. The Deco restart list
+// renders from the /api/status snapshot the shared refresh already
+// fetches (see app.js: renderDecoUnits); the console tails the
+// launcher log and sends commands through trigger files (app.js:
+// initConsole).
 
 async function refreshSystemPage() {
   const shared = await refreshShared();
-  if (shared.status) renderDecoUnits(shared.status);
+  if (shared.status) {
+    renderDecoUnits(shared.status);
+    renderConsoleManaged(shared.status);
+  }
 }
 
 refreshSystemPage();
 setInterval(refreshSystemPage, 30000);
+initConsole();
 </script>
 </body>
 </html>
