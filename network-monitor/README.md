@@ -14,7 +14,7 @@ is optional but recommended — set one with `python set_password.py`
 reach it remotely, use Tailscale (your PC's 100.x address, same port
 8080).
 
-Current state: repo v0.7.0, dashboard v1.9.
+Current state: repo v0.7.1, dashboard v1.9.
 
 ## What it is
 
@@ -448,6 +448,13 @@ the monitor again.
   with backoff (5s, 15s, 30s cap). If it fails to stay up 3 times in a row
   after an update, the launcher logs a clear warning that the new version
   may be broken and keeps retrying (no auto-rollback in v1).
+- **Console commands:** while the launcher runs in a console window, you
+  can type commands into it — no need to kill the window to restart the
+  monitor. `restart` restarts the monitor (reloads `config.local.yaml`,
+  so this is how you apply a config edit), `update` checks for updates
+  now, `quit` stops the monitor and the launcher cleanly, `help` lists
+  the commands. Headless runs (Task Scheduler, piped stdin) have no
+  console, so no commands — everything else works the same.
 - **Disable auto-updates:** set `auto_update: false` in
   `config.local.yaml`. The launcher still supervises the monitor, it just
   stops checking for new commits.
@@ -601,7 +608,7 @@ not your real password).
 
 ## Status & roadmap
 
-- **Current:** v0.7.0 — six dashboard pages, device tracking with
+- **Current:** v0.7.1 — six dashboard pages, device tracking with
   auto-identification, latency/speed/outage history, the down detector
   with vendor status feeds, Wake-on-LAN, login, the auto-updating
   launcher, and per-unit Deco restarts from the System page.
