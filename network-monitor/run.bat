@@ -15,7 +15,7 @@ if not exist venv\Scripts\activate.bat (
 call venv\Scripts\activate.bat
 python -c "import uvicorn" 2>nul
 if errorlevel 1 (
-    echo Installing dependencies (first run only)...
+    echo Installing dependencies - first run only...
     pip install -r requirements.txt
     if errorlevel 1 (
         echo Dependency install failed.
