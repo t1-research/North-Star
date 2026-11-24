@@ -5,9 +5,10 @@ device tracking, latency graphs, speed test history, outage logging, a down
 detector for the services the household uses, and Wake-on-LAN, all on one
 web page. Phase 1 of the "Deco app on steroids" plan.
 
-**LAN-only by design.** There is no login and no encryption. This is safe on
-your home network. **Never port-forward it to the internet.** To reach it
-remotely, use Tailscale (your PC's 100.x address, same port 8080).
+**LAN-only by design.** The dashboard is plain HTTP with no encryption.
+A login password is optional — set one with `python set_password.py`
+(see "Login" below). **Never port-forward it to the internet.** To reach
+it remotely, use Tailscale (your PC's 100.x address, same port 8080).
 
 ## What it does
 
@@ -20,6 +21,7 @@ remotely, use Tailscale (your PC's 100.x address, same port 8080).
 | Outage detection | Opens an outage event when ALL external targets fail in one probe round; closes when any succeeds |
 | Down detector | HEAD health checks for the services in config.yaml (per-service intervals; Vercel sites every 3 hours); down after 2 consecutive failures, recovery on the first success |
 | Wake-on-LAN | Magic packet buttons for devices with `wol: true` in config.yaml |
+| Login (optional) | Password set with `python set_password.py`; session cookie lasts 7 days; 5 failed logins lock an IP out for 5 minutes |
 | Auto-updates (launcher) | `launcher.py` polls GitHub, pulls new commits, and restarts the monitor — see below |
 | Dashboard | Status cards, 24h latency chart, 7d speed chart, device table, service status grid, event log |
 
@@ -44,7 +46,9 @@ devices with no manual name are identified in this priority order:
 5. **Unknown** — nothing answered; the device still shows with its MAC.
 
 A name in config.yaml **always wins** and is never overwritten — manually
-named devices aren't even probed. Discovered names are cached in memory
+named devices aren't even probed. The shipped config names nothing: every
+device identifies itself, and the only `devices` entries are nameless
+WoL enables for the gaming PC and the NAS. Discovered names are cached in memory
 (re-probed at most once an hour; still-unnamed devices are re-probed on
 every scan, since a sleeping phone may answer next time). The dashboard
 shows the effective name plus a small source tag on auto-discovered names
@@ -83,6 +87,37 @@ timeout, or a DNS/connection failure is down.
   The header pill turns red while any service is down.
 - **API:** `GET /api/services` returns the current status per service;
   `GET /api/services/history?hours=24` returns the raw check rows.
+
+## Login
+
+The dashboard is open to anyone on your LAN until you set a password.
+To protect it:
+
+1. From the `network-monitor` folder, run:
+   ```bat
+   python set_password.py
+   ```
+   It prompts for a password (twice, hidden, at least 8 characters),
+   hashes it with PBKDF2-HMAC-SHA256, and writes the hash to
+   `config.local.yaml` — and nothing else in that file is touched.
+2. **Restart the monitor.** The running monitor only reads config at
+   startup, so the password takes effect on the next start. If you run
+   the launcher, stop it (Ctrl+C) and start it again.
+
+Notes:
+
+- The hash lives in `config.local.yaml`, which is NOT tracked by git —
+  it never goes to the public repo. Never put a hash (or a password) in
+  `config.yaml`.
+- A signed-in session lasts **7 days**; the Log out button in the
+  dashboard header signs out immediately. Restarting the monitor signs
+  everyone out (sessions live in memory only).
+- **Lockout:** 5 failed logins from one IP within 10 minutes locks that
+  IP out for 5 minutes (further attempts get a 429). A successful login
+  clears the count.
+- The dashboard is still plain HTTP, so the password only protects it
+  on networks you trust. Remote access should go over Tailscale
+  (encrypted) — never a raw port forward, password or not.
 
 ## Adding alerts (Discord / email later)
 
@@ -182,15 +217,17 @@ monitor again.
 - **Per-device bandwidth is not available in v1.** The Deco doesn't expose
   it outside its app. The CAX30 traffic meter and Deco local API are Phase 2
   experiments.
-- **The CAX30 (192.168.1.1) has no MAC in the device table.** It sits on
-  another subnet, so it never appears in this PC's ARP table. It is still
-  pinged every minute and charted as a latency target.
+- **The CAX30 (192.168.1.1) isn't in the device table.** It sits on
+  another subnet, so it can't be discovered — but it's still pinged every
+  minute and charted as a latency target.
 - **WoL needs the target's MAC.** For devices listed by IP only, the MAC is
   learned from the first ARP scan — the Wake button appears after that.
   WoL also needs to be enabled in the target's BIOS and network adapter.
-- Speed tests use ~100–500 MB of traffic each (they saturate the connection
-  briefly). Hourly is the default; raise `speedtest_interval_seconds` in
-  config.local.yaml if that bothers you.
+- Speed tests saturate the connection for ~20 seconds each (~10s down,
+  ~10s up) and move roughly line-speed × 20s of traffic — about 1.5 GB
+  per test on a gigabit line. The default is every 15 minutes; raise
+  `speedtest_interval_seconds` in config.local.yaml if that bothers you,
+  and keep your ISP data cap in mind.
 
 ## Project layout
 
@@ -198,11 +235,13 @@ monitor again.
 run.py / run.bat / run.sh   entry points, direct launch (Windows / Linux)
 launcher.py                 auto-updating launcher (supervises run.py)
 run_launcher.bat / .sh      entry points for the launcher (Windows / Linux)
+set_password.py             set the dashboard password (writes the hash to config.local.yaml)
 config.yaml                 all settings + known devices + watched services (tracked — don't edit on your PC)
 config.local.yaml.example   template for per-machine overrides (copy to config.local.yaml, untracked)
 requirements.txt
 app/
-  main.py       FastAPI app + API endpoints + dashboard route
+  main.py       FastAPI app + API endpoints + dashboard route + login middleware
+  auth.py       dashboard auth: PBKDF2 hashing, sessions, brute-force guard (stdlib only)
   collectors.py background jobs (scan / latency / speedtest / services / outages)
   services.py   down detector: HTTP health checks + service status logic
   notifiers.py  pluggable alert notifiers (dashboard-only log notifier for now)
@@ -214,6 +253,7 @@ app/
   config.py     config loading
 static/
   index.html    the dashboard (vanilla JS + Chart.js via CDN)
+  login.html    the login page (no external assets — works with zero internet)
 tests/
   smoke_test.py CI smoke test: boots the server, hits every endpoint
 data/
@@ -225,6 +265,9 @@ data/
 | Endpoint | What it does |
 |---|---|
 | `GET /` | Dashboard |
+| `GET /login` | Login page (redirects to `/` when no password is set or already signed in) |
+| `POST /api/login` | Sign in with JSON `{"password": "..."}` — sets the 7-day session cookie |
+| `POST /api/logout` | Sign out — revokes the session and clears the cookie |
 | `GET /api/status` | Snapshot: internet up/down, latest latency, last speed test, device counts, running version (commit SHA) + started_at |
 | `GET /api/devices` | All known devices with online/last-seen, manual name, and discovered name + source |
 | `GET /api/latency?hours=24` | Latency history |
