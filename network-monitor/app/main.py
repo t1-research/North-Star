@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import auth, db, services, updates
 from .collectors import Collectors
@@ -54,6 +55,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="North Star Monitor", lifespan=lifespan)
+
+# Shared dashboard assets (style.css, app.js). Served under /static and
+# gated by the auth middleware like every other non-public path — with a
+# password set, they only load once you're signed in.
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 # --------------------------------------------------------------- auth gate
@@ -135,6 +141,26 @@ def logout(request: Request):
 @app.get("/")
 def dashboard():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+
+@app.get("/devices")
+def devices_page():
+    return FileResponse(os.path.join(STATIC_DIR, "devices.html"))
+
+
+@app.get("/speed-tests")
+def speed_tests_page():
+    return FileResponse(os.path.join(STATIC_DIR, "speed-tests.html"))
+
+
+@app.get("/statistics")
+def statistics_page():
+    return FileResponse(os.path.join(STATIC_DIR, "statistics.html"))
+
+
+@app.get("/services")
+def services_page():
+    return FileResponse(os.path.join(STATIC_DIR, "services.html"))
 
 
 # ------------------------------------------------------------------- API
