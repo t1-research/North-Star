@@ -57,6 +57,7 @@ const NAV_PAGES = [
   { path: '/speed-tests', label: 'Speed Tests' },
   { path: '/statistics', label: 'Statistics' },
   { path: '/services', label: 'Services' },
+  { path: '/system', label: 'System' },
 ];
 function renderNav() {
   const nav = $('main-nav');
@@ -253,6 +254,185 @@ async function refreshShared() {
   } catch (e) { console.error('services:', e); }
 
   return out;
+}
+
+// ---------- Deco restart (System page) ----------
+// Mirrors the Deco app's own "Select Deco" reboot screen: a checkbox
+// list (name + Main badge + MAC), a Select/Deselect all toggle, and a
+// "Restart selected (N)" button with a live count. Only the checked
+// units restart. Guarded like the charts: every function no-ops when
+// the section's elements aren't on the page (it only exists on /system).
+// The unit list comes from /api/status (deco_units + deco_configured),
+// fetched by the shared refresh cycle — the System page's inline script
+// calls renderDecoUnits with each snapshot.
+let decoUnitsKey = null;
+
+function decoCheckedUnits() {
+  const out = [];
+  document.querySelectorAll('#deco-units .deco-check:checked').forEach((box) => {
+    out.push({ name: box.dataset.name, main: box.dataset.main === 'true' });
+  });
+  return out;
+}
+
+function updateDecoRestartButton() {
+  const btn = $('btn-deco-restart');
+  const toggle = $('deco-toggle-all');
+  if (!btn) return;
+  const boxes = document.querySelectorAll('#deco-units .deco-check');
+  const checked = document.querySelectorAll('#deco-units .deco-check:checked').length;
+  btn.textContent = 'Restart selected (' + checked + ')';
+  // Disabled while a restart is in flight (btn carries the flag), when
+  // nothing is checked, or when the section itself is disabled (no
+  // password configured — the boxes are disabled then).
+  btn.disabled = btn.dataset.busy === '1' || checked === 0;
+  if (toggle) {
+    toggle.textContent = boxes.length && checked === boxes.length ? 'Deselect all' : 'Select all';
+  }
+}
+
+function toggleAllDecoUnits() {
+  const boxes = document.querySelectorAll('#deco-units .deco-check:not(:disabled)');
+  if (!boxes.length) return;
+  const allChecked = document.querySelectorAll('#deco-units .deco-check:checked').length === boxes.length;
+  boxes.forEach((box) => { box.checked = !allChecked; });
+  updateDecoRestartButton();
+}
+
+function renderDecoUnits(st) {
+  const list = $('deco-units');
+  if (!list) return;
+  const units = st.deco_units || [];
+  const configured = !!st.deco_configured;
+  // The 30s refresh re-renders this list; re-building the DOM would
+  // wipe the user's checkbox selections. Only re-render when the list
+  // itself (or the configured state) actually changed.
+  const key = JSON.stringify(units) + '|' + configured;
+  if (key === decoUnitsKey) return;
+  decoUnitsKey = key;
+
+  const hint = $('deco-hint');
+  if (hint) hint.style.display = configured ? 'none' : '';
+  const toggle = $('deco-toggle-all');
+  if (toggle) toggle.disabled = !configured || !units.length;
+
+  if (!units.length) {
+    list.innerHTML = '<div class="empty">No Deco units configured — add their MACs under deco.units in config.yaml.</div>';
+    updateDecoRestartButton();
+    return;
+  }
+  list.innerHTML = units.map((u) =>
+    '<label class="deco-row' + (configured ? '' : ' disabled') + '">' +
+    '<input type="checkbox" class="deco-check" data-name="' + esc(u.name) + '" data-main="' + (u.main ? 'true' : 'false') + '"' +
+    (configured ? '' : ' disabled') + ' onchange="updateDecoRestartButton()">' +
+    '<span class="deco-info"><span class="deco-name">' + esc(u.name) +
+    (u.main ? ' <span class="deco-badge">Main</span>' : '') + '</span>' +
+    '<span class="deco-mac">' + esc(u.mac) + '</span>' +
+    (u.main ? '<span class="deco-warn">Restarts the whole network</span>' : '') +
+    '</span></label>'
+  ).join('');
+  updateDecoRestartButton();
+}
+
+async function restartSelectedDecos() {
+  const btn = $('btn-deco-restart');
+  const statusEl = $('deco-status');
+  if (!btn) return;
+  const selected = decoCheckedUnits();
+  if (!selected.length) return;
+  const names = selected.map((u) => u.name);
+  const mainNames = selected.filter((u) => u.main).map((u) => u.name);
+  const msg = 'Restart ' + names.join(', ') + '?\n\n' +
+    (mainNames.length
+      ? mainNames.join(', ') + (mainNames.length > 1 ? ' are' : ' is') +
+        ' the main unit — the whole network drops for ~1–2 min while ' +
+        (mainNames.length > 1 ? 'they restart.' : 'it restarts.')
+      : 'Only those units restart — the rest of the network stays up.');
+  if (!window.confirm(msg)) return;
+
+  btn.dataset.busy = '1';
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = 'Sending…';
+  statusEl.textContent = 'Sending restart…';
+
+  let r;
+  try {
+    r = await fetch('/api/deco/reboot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ units: names }),
+    });
+  } catch (e) {
+    statusEl.textContent = 'Couldn’t reach the server — is the monitor still running?';
+    btn.dataset.busy = '';
+    btn.textContent = origText;
+    updateDecoRestartButton();
+    return;
+  }
+  if (r.status === 401) { window.location.href = '/login'; return; }
+  let data = {};
+  try { data = await r.json(); } catch (e) { /* non-JSON error body */ }
+  if (!r.ok) {
+    statusEl.textContent = 'Restart failed: ' + (data.detail || data.error || ('HTTP ' + r.status));
+    btn.dataset.busy = '';
+    btn.textContent = origText;
+    updateDecoRestartButton();
+    return;
+  }
+  const results = data.results || [];
+  const ok = results.filter((x) => x.status === 'rebooting').map((x) => x.name);
+  const failed = results.filter((x) => x.status !== 'rebooting');
+  let line = ok.length ? ok.join(', ') + ' restarting…' : '';
+  if (failed.length) {
+    line += (line ? ' ' : '') + failed.map((x) => x.name + ': ' + (x.error || 'failed')).join(' ');
+  }
+  statusEl.textContent = line;
+  if (!ok.length) {
+    // Nothing rebooted — restore the button right away.
+    btn.dataset.busy = '';
+    btn.textContent = origText;
+    updateDecoRestartButton();
+    return;
+  }
+  // Wait for the network to settle, then restore the button. If the
+  // main unit rebooted, /api/status drops for a minute or two and comes
+  // back; if only satellites rebooted, it may never drop at all. So:
+  // poll every 5s; once the API answers twice in a row AND at least 10s
+  // have passed, we're done. (The 30s page refresh keeps running
+  // throughout and updates the header pills on its own.)
+  const started = Date.now();
+  let everDropped = false;
+  let okStreak = 0;
+  const deadline = Date.now() + 180000;
+  const poll = async () => {
+    try {
+      await api('/api/status');
+      okStreak += 1;
+    } catch (e) {
+      if (e.message === 'not authenticated') return; // api() already redirected
+      everDropped = true;
+      okStreak = 0;
+    }
+    if (okStreak >= 2 && Date.now() - started >= 10000) {
+      statusEl.textContent = everDropped
+        ? 'Deco is back online.'
+        : 'Restart sent — ' + ok.join(', ') + ' rebooting.';
+      btn.dataset.busy = '';
+      // Clear the selections: the job is done.
+      document.querySelectorAll('#deco-units .deco-check').forEach((box) => { box.checked = false; });
+      updateDecoRestartButton();
+      return;
+    }
+    if (Date.now() >= deadline) {
+      statusEl.textContent = 'Still waiting for the network — this page keeps refreshing on its own.';
+      btn.dataset.busy = '';
+      updateDecoRestartButton();
+      return;
+    }
+    setTimeout(poll, 5000);
+  };
+  setTimeout(poll, 5000);
 }
 
 // ---------- actions ----------
