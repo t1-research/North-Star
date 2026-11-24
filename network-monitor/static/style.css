@@ -141,6 +141,33 @@ button.ghost:hover { background: var(--teal-dim); }
 .deco-actions { display: flex; align-items: center; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
 .deco-status { color: var(--muted); font-size: 13px; }
 
+/* ---------- web console (System page) ---------- */
+/* The launcher's console in the browser: a dark terminal-style pane
+   with a command input and quick buttons. */
+.console-pane {
+  background: #04121a; border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; height: 240px;
+  overflow-y: auto; overflow-x: hidden;
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+  font-size: 12.5px; line-height: 1.6; color: #b8d4de;
+  white-space: pre-wrap; overflow-wrap: break-word;
+  margin-bottom: 12px;
+}
+.console-pane .console-echo { color: var(--teal); font-weight: 600; }
+.console-pane .console-info { color: #e6f0f3; }
+.console-pane .console-error { color: var(--bad); }
+.console-input-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.console-prompt { color: var(--teal); font-weight: 700; font-size: 15px; flex: none; }
+.console-input-row input {
+  flex: 1; min-width: 0; background: var(--card-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; font-size: 13px; font-family: inherit;
+}
+.console-input-row input:focus { outline: none; border-color: rgba(20, 184, 166, 0.6); }
+.console-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+button.ghost.console-danger { color: var(--bad); border-color: rgba(248, 113, 113, 0.5); }
+button.ghost.console-danger:hover { background: rgba(248, 113, 113, 0.12); }
+
 /* ---------- device table ---------- */
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th {
