@@ -26,6 +26,13 @@
 #   - name: "Printer"
 #     ip: "192.168.68.50"
 
+# --- Dashboard password ---
+# Set it with `python set_password.py` — it writes the hash here for you.
+# Never write a hash by hand, and never put one in config.yaml: that file
+# is tracked in a public repo. Restart the monitor after setting a
+# password (the running monitor only reads config at startup).
+# dashboard_password_hash: "<set with python set_password.py>"
+
 # --- Dashboard ---
 # port: 8080
 # host: "0.0.0.0"
