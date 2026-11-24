@@ -48,7 +48,7 @@ devices with no manual name are identified in this priority order:
 A name in config.yaml **always wins** and is never overwritten — manually
 named devices aren't even probed. The shipped config names nothing: every
 device identifies itself, and the only `devices` entries are nameless
-WoL enables for the gaming PC and the NAS. Discovered names are cached in memory
+WoL enables for the gaming PC (Wi-Fi + Ethernet). Discovered names are cached in memory
 (re-probed at most once an hour; still-unnamed devices are re-probed on
 every scan, since a sleeping phone may answer next time). The dashboard
 shows the effective name plus a small source tag on auto-discovered names
