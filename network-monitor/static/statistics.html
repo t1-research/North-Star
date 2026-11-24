@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>North Star Monitor — Statistics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">&#9733;</div>
+    <div class="title">
+      <h1>North Star <span>Monitor</span></h1>
+      <p>Home network &middot; Deco mesh &middot; 192.168.68.0/24</p>
+    </div>
+    <div class="header-right">
+      <span class="pill" id="net-pill"><span class="dot ok" id="net-dot"></span><span id="net-text">Checking&hellip;</span></span>
+      <span class="pill" id="svc-pill"><span class="dot unknown" id="svc-dot"></span><span id="svc-text">Services&hellip;</span></span>
+      <span class="updated" id="updated"></span>
+    </div>
+  </header>
+
+  <nav class="main-nav" id="main-nav" aria-label="Dashboard pages"></nav>
+
+  <section class="card">
+    <h2>Latency &mdash; last 24 hours</h2>
+    <p class="hint">Round-trip time to each target. Gaps mean the target did not answer that probe.</p>
+    <div class="chart-box"><canvas id="latency-chart"></canvas></div>
+    <div class="empty" id="latency-empty" style="display:none">No latency data yet &mdash; probes run every minute.</div>
+  </section>
+
+  <section class="card">
+    <h2>Service uptime</h2>
+    <p class="hint">24-hour uptime and average response time per service, from the down detector's check history.</p>
+    <table>
+      <thead><tr><th>Service</th><th>24h uptime</th><th>Avg response</th></tr></thead>
+      <tbody id="uptime-rows"><tr><td colspan="3" class="empty">Loading&hellip;</td></tr></tbody>
+    </table>
+  </section>
+
+  <footer>North Star Monitor v1.8 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span><button class="ghost footer-btn" id="btn-check-updates" style="display:none" onclick="checkUpdates()">Check for updates</button><span id="update-check-info" style="display:none"></span></footer>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+'use strict';
+// Statistics: latency chart + per-service uptime table. Uptime % comes
+// from /api/services; the average response time is computed client-side
+// from the existing /api/services/history rows (successful checks only).
+
+function renderUptimeTable(svcs, historyRows) {
+  if (!svcs || !svcs.length) {
+    $('uptime-rows').innerHTML = '<tr><td colspan="3" class="empty">No services configured — add some in config.yaml.</td></tr>';
+    return;
+  }
+  // Average response per service over the last 24h of successful checks.
+  const sums = {};
+  if (historyRows) {
+    historyRows.forEach((r) => {
+      if (r.response_ms == null) return;
+      const acc = (sums[r.service] = sums[r.service] || { total: 0, n: 0 });
+      acc.total += r.response_ms;
+      acc.n += 1;
+    });
+  }
+  $('uptime-rows').innerHTML = svcs.map((s) => {
+    const uptime = s.uptime_24h != null ? s.uptime_24h.toFixed(1) + '%' : '—';
+    const acc = sums[s.name];
+    const avg = acc && acc.n ? (acc.total / acc.n).toFixed(0) + ' ms' : '—';
+    const dotCls = s.status === 'up' ? 'ok' : s.status === 'down' ? 'bad' : 'unknown';
+    return '<tr><td><span class="status-cell"><span class="dot ' + dotCls + '"></span>' + esc(s.name) + '</span></td>' +
+      '<td>' + uptime + '</td><td>' + avg + '</td></tr>';
+  }).join('');
+}
+
+async function refreshStatisticsPage() {
+  const shared = await refreshShared();
+  let history = null;
+  try {
+    history = await api('/api/services/history?hours=24');
+  } catch (e) { console.error('services history:', e); }
+  // Render with whatever we have: uptime % needs the services list,
+  // averages need the history rows. Either may be missing on error.
+  if (shared.services) renderUptimeTable(shared.services, history);
+}
+
+refreshStatisticsPage();
+refreshLatencyChart();
+setInterval(refreshStatisticsPage, 30000);
+setInterval(refreshLatencyChart, 120000);
+</script>
+</body>
+</html>
