@@ -6,228 +6,7 @@
 <title>North Star Monitor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-<style>
-  :root {
-    --bg: #071820;
-    --card: #0e2a3a;
-    --card-2: #123349;
-    --border: rgba(255, 255, 255, 0.08);
-    --teal: #14b8a6;
-    --teal-dim: rgba(20, 184, 166, 0.15);
-    --text: #e6f0f3;
-    --muted: #8fb0bd;
-    --ok: #34d399;
-    --bad: #f87171;
-    --warn: #fbbf24;
-    --radius: 14px;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-    min-height: 100vh;
-    padding: 24px 20px 40px;
-  }
-  .wrap { max-width: 1180px; margin: 0 auto; }
-
-  /* ---------- header ---------- */
-  header {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
-    margin-bottom: 22px;
-  }
-  .logo {
-    width: 46px; height: 46px; border-radius: 12px;
-    background: linear-gradient(135deg, var(--teal), #0d9488);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 24px; font-weight: 800; color: #04222b; flex: none;
-    box-shadow: 0 4px 18px rgba(20, 184, 166, 0.35);
-  }
-  .title h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
-  .title h1 span { color: var(--teal); }
-  .title p { color: var(--muted); font-size: 13px; margin-top: 2px; }
-  .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .pill {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
-    border: 1px solid var(--border); background: var(--card);
-  }
-  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
-  .dot.bad { background: var(--bad); box-shadow: 0 0 8px var(--bad); animation: pulse 1.2s infinite; }
-  .dot.unknown { background: #64748b; }
-  @keyframes pulse { 50% { opacity: 0.4; } }
-  .updated { color: var(--muted); font-size: 12px; }
-  button {
-    font-family: inherit; cursor: pointer; border: none;
-    background: var(--teal); color: #04222b; font-weight: 700; font-size: 13px;
-    padding: 10px 18px; border-radius: 10px; transition: filter 0.15s, transform 0.1s;
-  }
-  button:hover { filter: brightness(1.1); }
-  button:active { transform: scale(0.97); }
-  button:disabled { opacity: 0.55; cursor: wait; }
-  button.ghost {
-    background: transparent; color: var(--teal);
-    border: 1px solid rgba(20, 184, 166, 0.5); padding: 6px 12px; font-size: 12px;
-  }
-  button.ghost:hover { background: var(--teal-dim); }
-
-  /* ---------- stat cards ---------- */
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
-  @media (max-width: 900px) { .stats { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 400px) { .stats { grid-template-columns: 1fr; } }
-  .stat {
-    background: linear-gradient(160deg, var(--card), var(--card-2));
-    border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 18px 20px;
-  }
-  .stat .label { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; }
-  .stat .value { font-size: 30px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -0.5px; }
-  .stat .value small { font-size: 15px; font-weight: 600; color: var(--muted); }
-  .stat .sub { color: var(--muted); font-size: 12.5px; }
-  .stat .value.good { color: var(--ok); }
-  .stat .value.bad { color: var(--bad); }
-
-  /* ---------- cards & charts ---------- */
-  .card {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 20px; margin-bottom: 18px;
-  }
-  .card h2 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
-  .card .hint { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
-  .chart-box { position: relative; height: 240px; }
-  .empty {
-    color: var(--muted); font-size: 14px; text-align: center; padding: 40px 0;
-  }
-
-  /* ---------- device table ---------- */
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th {
-    text-align: left; color: var(--muted); font-size: 11.5px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.7px; padding: 8px 10px;
-    border-bottom: 1px solid var(--border);
-  }
-  td { padding: 11px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); }
-  tr:last-child td { border-bottom: none; }
-  tr.offline { opacity: 0.55; }
-  .name-cell { font-weight: 600; }
-  .name-cell .unknown { color: var(--muted); font-weight: 500; font-style: italic; }
-  .src-tag {
-    font-size: 10.5px; font-weight: 700; color: var(--teal);
-    background: var(--teal-dim); border: 1px solid rgba(20, 184, 166, 0.35);
-    padding: 2px 7px; border-radius: 999px; margin-left: 8px;
-    vertical-align: middle; letter-spacing: 0.3px; white-space: nowrap;
-  }
-  .mono { font-family: ui-monospace, 'SF Mono', Consolas, monospace; font-size: 13px; color: var(--muted); }
-  .status-cell { display: flex; align-items: center; gap: 7px; font-size: 13px; }
-  .status-cell .dot { width: 8px; height: 8px; }
-
-  /* ---------- services ---------- */
-  .services-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  @media (max-width: 900px) { .services-grid { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 520px) { .services-grid { grid-template-columns: 1fr; } }
-  .service-card {
-    background: var(--card-2); border: 1px solid var(--border);
-    border-radius: 12px; padding: 14px 16px;
-  }
-  .service-card.down {
-    border-color: rgba(248, 113, 113, 0.6);
-    box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.25), 0 0 18px rgba(248, 113, 113, 0.12);
-  }
-  .service-card .svc-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-  .service-card .svc-url { font-size: 12px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .service-card .svc-meta {
-    display: flex; justify-content: space-between; gap: 8px;
-    font-size: 13px; font-weight: 600; margin-top: 10px;
-  }
-  .service-card .svc-meta .down-text { color: var(--bad); }
-  .service-card .svc-checked { color: var(--muted); font-size: 11.5px; margin-top: 4px; }
-  .service-card .svc-feed { font-size: 12px; margin-top: 6px; color: var(--muted); }
-  .service-card .svc-feed.warn { color: var(--warn); }
-  .service-card .svc-feed.bad { color: var(--bad); }
-  .service-card .svc-feed .svc-feed-asof { color: var(--muted); font-size: 11.5px; }
-  .service-card .svc-dd { color: var(--muted); text-decoration: none; }
-  .service-card .svc-dd:hover { color: var(--teal); text-decoration: underline; }
-
-  /* ---------- events ---------- */
-  .event {
-    display: flex; gap: 14px; align-items: flex-start;
-    padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
-  }
-  .event:last-child { border-bottom: none; }
-  .event .badge {
-    flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
-    padding: 4px 9px; border-radius: 6px; text-transform: uppercase; margin-top: 1px;
-  }
-  .badge.outage { background: rgba(248, 113, 113, 0.15); color: var(--bad); }
-  .badge.svc { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
-  .event .when { font-weight: 600; font-size: 14px; }
-  .event .detail { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
-  .ongoing { color: var(--warn); font-weight: 700; }
-
-  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 8px; }
-  footer span { color: var(--teal); }
-
-  /* ---------- responsive (phones) ---------- */
-  /* Device tables scroll sideways instead of overflowing the viewport;
-     the table keeps every column — nothing is hidden on mobile. */
-  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .table-scroll table { min-width: 620px; }
-  .table-scroll::-webkit-scrollbar { height: 8px; }
-  .table-scroll::-webkit-scrollbar-thumb { background: rgba(20, 184, 166, 0.4); border-radius: 4px; }
-  .table-scroll::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
-  .table-hint { display: none; color: var(--muted); font-size: 12px; margin-top: 8px; text-align: center; }
-
-  /* ---------- device filter tabs ---------- */
-  .device-tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
-  .device-tabs .tab {
-    background: transparent; color: var(--muted); font-weight: 600; font-size: 13px;
-    padding: 10px 14px; border-radius: 10px; border: 1px solid transparent;
-    min-height: 44px;
-  }
-  .device-tabs .tab:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
-  .device-tabs .tab.active {
-    color: var(--teal); background: var(--teal-dim);
-    border-color: rgba(20, 184, 166, 0.5);
-  }
-  .device-tabs .sweep-btn { margin-left: auto; }
-  .sweep-msg { color: var(--muted); font-size: 13px; margin: -6px 0 12px; }
-
-  .footer-btn { margin-left: 10px; vertical-align: middle; }
-
-  @media (max-width: 640px) {
-    body { padding: 16px 12px 32px; }
-    header { gap: 10px; margin-bottom: 16px; }
-    .logo { width: 40px; height: 40px; font-size: 20px; border-radius: 10px; }
-    .title h1 { font-size: 21px; }
-    .header-right { width: 100%; margin-left: 0; gap: 8px; }
-    .pill { padding: 6px 10px; font-size: 12px; }
-    .updated { display: none; }
-    button { min-height: 44px; }
-    button.ghost { min-height: 44px; padding: 8px 14px; }
-    .card { padding: 16px; }
-    .chart-box { height: 200px; }
-    .stat { padding: 14px 16px; }
-    .stat .value { font-size: 26px; }
-    .table-hint { display: block; }
-    /* Sticky device-name column so rows stay readable while scrolling. */
-    .table-scroll th:first-child, .table-scroll td:first-child {
-      position: sticky; left: 0; background: var(--card); z-index: 1;
-      box-shadow: 1px 0 0 var(--border);
-    }
-    .table-scroll th:first-child { z-index: 2; }
-    .table-scroll th, .table-scroll td { padding: 9px 8px; }
-    .table-scroll table { font-size: 13px; }
-    .table-scroll .mono { font-size: 12px; }
-    .event { gap: 10px; }
-    .event > div { min-width: 0; }
-    .event .detail { overflow-wrap: break-word; }
-    .service-card .svc-feed, .service-card .svc-checked { overflow-wrap: break-word; }
-    footer { line-height: 2; }
-  }
-</style>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <div class="wrap">
@@ -241,10 +20,10 @@
       <span class="pill" id="net-pill"><span class="dot ok" id="net-dot"></span><span id="net-text">Checking&hellip;</span></span>
       <span class="pill" id="svc-pill"><span class="dot unknown" id="svc-dot"></span><span id="svc-text">Services&hellip;</span></span>
       <span class="updated" id="updated"></span>
-      <button id="btn-speedtest" onclick="runSpeedtest()">Run speed test</button>
-      <button class="ghost" onclick="logout()">Log out</button>
     </div>
   </header>
+
+  <nav class="main-nav" id="main-nav" aria-label="Dashboard pages"></nav>
 
   <section class="stats">
     <div class="stat">
@@ -270,553 +49,104 @@
   </section>
 
   <section class="card">
-    <h2>Latency &mdash; last 24 hours</h2>
-    <p class="hint">Round-trip time to each target. Gaps mean the target did not answer that probe.</p>
-    <div class="chart-box"><canvas id="latency-chart"></canvas></div>
-    <div class="empty" id="latency-empty" style="display:none">No latency data yet &mdash; probes run every minute.</div>
-  </section>
-
-  <section class="card">
-    <h2>Speed tests &mdash; last 7 days</h2>
-    <p class="hint">Automatic hourly tests, plus any you run on demand.</p>
-    <div class="chart-box"><canvas id="speed-chart"></canvas></div>
-    <div class="empty" id="speed-empty" style="display:none">No speed tests yet &mdash; hit "Run speed test" above.</div>
-  </section>
-
-  <section class="card">
-    <h2>Devices</h2>
-    <p class="hint">Scanned every 2 minutes. Devices name themselves from mDNS, NetBIOS, DNS, or their hardware vendor &mdash; a name in config.yaml always overrides the discovered one.</p>
-    <div class="device-tabs" role="tablist" aria-label="Filter devices">
-      <button class="tab active" data-filter="online" onclick="setDeviceFilter('online', this)">Connected (<span id="count-online">0</span>)</button>
-      <button class="tab" data-filter="offline" onclick="setDeviceFilter('offline', this)">Disconnected (<span id="count-offline">0</span>)</button>
-      <button class="tab" data-filter="all" onclick="setDeviceFilter('all', this)">All devices (<span id="count-all">0</span>)</button>
-      <button class="ghost sweep-btn" id="btn-sweep" onclick="sweepOffline()">Sweep offline</button>
+    <div class="speedline">
+      <span class="speedline-label">Latest speed test</span>
+      <span id="speedline-text">Loading&hellip;</span>
+      <a href="/speed-tests">Full history &#8599;</a>
     </div>
-    <div id="sweep-msg" class="sweep-msg" style="display:none"></div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr><th>Device</th><th>IP</th><th>MAC</th><th>Status</th><th>Last seen</th><th></th></tr></thead>
-        <tbody id="device-rows"><tr><td colspan="6" class="empty">Loading&hellip;</td></tr></tbody>
-      </table>
-    </div>
-    <p class="table-hint">Scroll sideways to see all columns.</p>
   </section>
 
   <section class="card">
-    <h2>Services &mdash; down detector</h2>
-    <p class="hint">Most services are checked every 2 minutes; your Vercel sites once a day to keep usage down. A service is declared down after 2 failed checks in a row; while the internet is down, everything shows as unknown.</p>
-    <div class="services-grid" id="services-grid"><div class="empty">Loading&hellip;</div></div>
+    <h2>Services at a glance</h2>
+    <p class="hint">Full status, response times, and vendor reports on the <a href="/services" style="color: var(--teal);">Services page</a>.</p>
+    <div class="glance" id="services-glance"><div class="empty">Loading&hellip;</div></div>
   </section>
 
-  <section class="card">
-    <h2>Outages &amp; events</h2>
-    <p class="hint">An outage opens when every external target fails in the same probe round. Service down/recovery windows appear here too.</p>
-    <div id="event-list"><div class="empty">Loading&hellip;</div></div>
-  </section>
-
-  <footer>North Star Monitor v1.7 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span><button class="ghost footer-btn" id="btn-check-updates" style="display:none" onclick="checkUpdates()">Check for updates</button><span id="update-check-info" style="display:none"></span></footer>
+  <footer>North Star Monitor v1.8 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span><button class="ghost footer-btn" id="btn-check-updates" style="display:none" onclick="checkUpdates()">Check for updates</button><span id="update-check-info" style="display:none"></span></footer>
 </div>
 
+<script src="/static/app.js"></script>
 <script>
 'use strict';
+// Home: stat cards + latest speed test one-liner + services glance strip.
+// No charts here — they live on the Speed Tests and Statistics pages.
 
-// ---------- helpers ----------
-const $ = (id) => document.getElementById(id);
-const TARGET_COLORS = {
-  '1.1.1.1': '#14b8a6', '8.8.8.8': '#38bdf8',
-  '192.168.68.1': '#fbbf24', '192.168.1.1': '#a78bfa',
-};
-const FALLBACK_COLORS = ['#34d399', '#f472b6', '#fb923c', '#94a3b8'];
-
-function fmtTime(ts) {
-  return new Date(ts * 1000).toLocaleString([], {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
-function relTime(ts) {
-  if (!ts) return 'never';
-  const s = Math.max(0, Math.floor(Date.now() / 1000) - ts);
-  if (s < 45) return 'just now';
-  if (s < 3600) return Math.floor(s / 60) + ' min ago';
-  if (s < 86400) return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm ago';
-  return Math.floor(s / 86400) + 'd ago';
-}
-function fmtDuration(secs) {
-  if (secs < 60) return secs + 's';
-  if (secs < 3600) return Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
-  return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
-}
-function fmtInterval(sec) {
-  if (sec == null) return '';
-  if (sec < 60) return sec + 's';
-  if (sec < 3600) return Math.round(sec / 60) + 'm';
-  return (sec / 3600).toFixed(sec % 3600 === 0 ? 0 : 1) + 'h';
-}
-function esc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-async function api(path, opts) {
-  const r = await fetch(path, opts);
-  // Session expired or signed out elsewhere: back to the login page.
-  if (r.status === 401) { window.location.href = '/login'; throw new Error('not authenticated'); }
-  if (!r.ok) throw new Error(path + ' -> HTTP ' + r.status);
-  return r.json();
-}
-
-// ---------- device rows (shared by the online table and the Offline section) ----------
-const SRC_LABELS = { mdns: 'mDNS', netbios: 'NetBIOS', rdns: 'DNS', oui: 'Vendor' };
-
-function deviceRow(d) {
-  const isSynthetic = d.mac.startsWith('ip:');
-  const macDisplay = isSynthetic ? '—' : d.mac;
-  // Effective name: manual config name wins, then the discovered name,
-  // then "Unknown device". Auto-discovered names carry a source tag.
-  let name;
-  if (d.name) {
-    name = esc(d.name);
-  } else if (d.discovered_name) {
-    const tag = SRC_LABELS[d.name_source]
-      ? '<span class="src-tag">' + esc(SRC_LABELS[d.name_source]) + '</span>' : '';
-    name = esc(d.discovered_name) + tag;
+function updateStatCards(st) {
+  // internet card
+  const inet = $('stat-internet'), inetSub = $('stat-internet-sub');
+  if (st.internet_up) {
+    inet.textContent = 'UP'; inet.className = 'value good';
+    inetSub.textContent = 'All external targets responding';
   } else {
-    name = '<span class="unknown">Unknown device</span>';
+    inet.textContent = 'DOWN'; inet.className = 'value bad';
+    inetSub.textContent = 'Outage for ' + fmtDuration(st.server_time - st.outage.start_ts) + ' (since ' + fmtTime(st.outage.start_ts) + ')';
   }
-  const wolBtn = (d.wol && !isSynthetic)
-    ? '<button class="ghost" onclick="wake(\'' + esc(d.mac) + '\', this)">Wake</button>'
-    : '';
-  return '<tr class="' + (d.online ? '' : 'offline') + '">' +
-    '<td class="name-cell">' + name + '</td>' +
-    '<td class="mono">' + esc(d.ip || '—') + '</td>' +
-    '<td class="mono">' + esc(macDisplay) + '</td>' +
-    '<td><span class="status-cell"><span class="dot ' + (d.online ? 'ok' : '') + '" style="' + (d.online ? '' : 'background:#64748b') + '"></span>' + (d.online ? 'Online' : 'Offline') + '</span></td>' +
-    '<td>' + relTime(d.last_seen) + '</td>' +
-    '<td>' + wolBtn + '</td></tr>';
-}
 
-// ---------- charts ----------
-Chart.defaults.color = '#8fb0bd';
-Chart.defaults.borderColor = 'rgba(255,255,255,0.07)';
-Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
-
-let latencyChart = null;
-let speedChart = null;
-
-function timeAxis(unit) {
-  return {
-    type: 'time',
-    time: { unit: unit, tooltipFormat: 'MMM d, h:mm a' },
-    ticks: { maxTicksLimit: 8, maxRotation: 0 },
-    grid: { color: 'rgba(255,255,255,0.05)' },
-  };
-}
-
-async function refreshCharts() {
-  try {
-    const rows = await api('/api/latency?hours=24');
-    const byTarget = {};
-    rows.forEach((r) => {
-      (byTarget[r.target] = byTarget[r.target] || []).push({
-        x: r.ts * 1000, y: r.success ? r.rtt_ms : null,
-      });
-    });
-    const targets = Object.keys(byTarget);
-    $('latency-empty').style.display = targets.length ? 'none' : 'block';
-    if (targets.length) {
-      const datasets = targets.map((t, i) => ({
-        label: t,
-        data: byTarget[t],
-        borderColor: TARGET_COLORS[t] || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
-        backgroundColor: 'transparent',
-        borderWidth: 1.8,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        spanGaps: false,
-        tension: 0.25,
-      }));
-      if (!latencyChart) {
-        latencyChart = new Chart($('latency-chart'), {
-          type: 'line',
-          data: { datasets },
-          options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            scales: {
-              x: timeAxis('hour'),
-              y: { title: { display: true, text: 'ms' }, beginAtZero: true },
-            },
-            plugins: { legend: { labels: { boxWidth: 12, usePointStyle: true } } },
-          },
-        });
-      } else {
-        latencyChart.data.datasets = datasets;
-        latencyChart.update();
-      }
-    }
-  } catch (e) { console.error('latency chart:', e); }
-
-  try {
-    const tests = await api('/api/speedtests?days=7');
-    $('speed-empty').style.display = tests.length ? 'none' : 'block';
-    if (tests.length) {
-      const dl = tests.map((t) => ({ x: t.ts * 1000, y: +t.download_mbps.toFixed(1) }));
-      const ul = tests.map((t) => ({ x: t.ts * 1000, y: +t.upload_mbps.toFixed(1) }));
-      const datasets = [
-        { label: 'Download (Mbps)', data: dl, backgroundColor: '#14b8a6', borderRadius: 3, maxBarThickness: 18 },
-        { label: 'Upload (Mbps)', data: ul, backgroundColor: '#f59e0b', borderRadius: 3, maxBarThickness: 18 },
-      ];
-      if (!speedChart) {
-        speedChart = new Chart($('speed-chart'), {
-          type: 'bar',
-          data: { datasets },
-          options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            scales: {
-              x: timeAxis('day'),
-              y: { title: { display: true, text: 'Mbps' }, beginAtZero: true },
-            },
-            plugins: { legend: { labels: { boxWidth: 12, usePointStyle: true } } },
-          },
-        });
-      } else {
-        speedChart.data.datasets = datasets;
-        speedChart.update();
-      }
-    }
-  } catch (e) { console.error('speed chart:', e); }
-}
-
-// ---------- footer: last/next update check (launcher only) ----------
-// Times come from /api/status on each 30s refresh; a 1s tick keeps the
-// "next check in …" countdown live between refreshes.
-let updateCheckInfo = null;
-
-function fmtCountdown(secs) {
-  if (secs == null) return '';
-  if (secs <= 0) return 'any moment';
-  if (secs < 60) return 'in ' + secs + 's';
-  const m = Math.floor(secs / 60);
-  if (m < 60) return 'in ' + m + ' min';
-  return 'in ' + Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
-}
-
-function renderUpdateCheckInfo() {
-  const el = $('update-check-info');
-  if (!updateCheckInfo) { el.style.display = 'none'; return; }
-  el.style.display = '';
-  const last = updateCheckInfo.last_check_ts
-    ? 'Last check: ' + relTime(updateCheckInfo.last_check_ts)
-    : 'Last check: —';
-  const nextSecs = updateCheckInfo.next_check_ts
-    ? updateCheckInfo.next_check_ts - Math.floor(Date.now() / 1000)
-    : null;
-  el.textContent = ' · ' + last + (nextSecs == null ? '' : ' · Next check ' + fmtCountdown(nextSecs));
-}
-setInterval(renderUpdateCheckInfo, 1000);
-
-// ---------- status, devices, events ----------
-async function refreshAll() {
-  try {
-    const st = await api('/api/status');
-
-    // header pill + internet card
-    const dot = $('net-dot'), txt = $('net-text');
-    const inet = $('stat-internet'), inetSub = $('stat-internet-sub');
-    if (st.internet_up) {
-      dot.className = 'dot ok'; txt.textContent = 'Internet up';
-      inet.textContent = 'UP'; inet.className = 'value good';
-      inetSub.textContent = 'All external targets responding';
-    } else {
-      dot.className = 'dot bad';
-      const mins = st.outage ? Math.floor((st.server_time - st.outage.start_ts) / 60) : 0;
-      txt.textContent = 'Internet DOWN';
-      inet.textContent = 'DOWN'; inet.className = 'value bad';
-      inetSub.textContent = 'Outage for ' + fmtDuration(st.server_time - st.outage.start_ts) + ' (since ' + fmtTime(st.outage.start_ts) + ')';
-    }
-
-    // latency card (1.1.1.1 primary, fall back to any external target)
-    const lat = st.latency['1.1.1.1'] || st.latency['8.8.8.8'];
-    if (lat && lat.success) {
-      $('stat-latency').innerHTML = lat.rtt_ms.toFixed(0) + '<small> ms</small>';
-      const others = Object.entries(st.latency)
-        .filter(([t]) => t !== '1.1.1.1')
-        .map(([t, v]) => t + ' ' + (v.success ? v.rtt_ms.toFixed(0) + ' ms' : 'down'))
-        .join(' · ');
-      $('stat-latency-sub').textContent = others || ' ';
-    } else {
-      $('stat-latency').textContent = '—';
-      $('stat-latency-sub').textContent = 'No successful probe yet';
-    }
-
-    // speed card
-    const btn = $('btn-speedtest');
-    if (st.speedtest_running) {
-      btn.disabled = true; btn.textContent = 'Testing…';
-    } else {
-      btn.disabled = false; btn.textContent = 'Run speed test';
-    }
-    if (st.last_speedtest) {
-      const t = st.last_speedtest;
-      $('stat-speed').innerHTML = t.download_mbps.toFixed(0) + '<small> / ' + t.upload_mbps.toFixed(0) + ' Mbps</small>';
-      $('stat-speed-sub').textContent = '↓ ' + t.download_mbps.toFixed(0) + ' · ↑ ' + t.upload_mbps.toFixed(0) +
-        ' · ping ' + t.ping_ms.toFixed(0) + ' ms · ' + relTime(t.ts);
-    } else if (st.speedtest_running) {
-      $('stat-speed').textContent = '…';
-      $('stat-speed-sub').textContent = 'Test in progress';
-    } else {
-      $('stat-speed').textContent = '—';
-      $('stat-speed-sub').textContent = 'No tests yet';
-    }
-
-    // devices card
-    $('stat-devices').innerHTML = st.devices_online + '<small> / ' + st.devices_total + '</small>';
-    $('stat-devices-sub').textContent = 'Up ' + fmtDuration(st.uptime_seconds) + ' · server time ' +
-      new Date(st.server_time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    // footer version (commit SHA from /api/status, or "dev build" outside a git checkout)
-    $('footer-version').textContent = !st.version ? '' : (st.version === 'dev' ? 'dev build' : 'commit ' + st.version);
-
-    // "Check for updates" only exists when a launcher supervises the app.
-    $('btn-check-updates').style.display = st.managed ? '' : 'none';
-    // Footer update-check times (launcher only; null when standalone).
-    updateCheckInfo = st.update_check || null;
-    renderUpdateCheckInfo();
-
-    $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } catch (e) { console.error('status:', e); }
-
-  try {
-    lastDevices = await api('/api/devices');
-    renderDevices();
-  } catch (e) { console.error('devices:', e); }
-
-  try {
-    const svcs = await api('/api/services');
-    const down = svcs.filter((s) => s.status === 'down').length;
-    const unknown = svcs.filter((s) => s.status === 'unknown').length;
-    const pillDot = $('svc-dot'), pillTxt = $('svc-text');
-    if (down) {
-      pillDot.className = 'dot bad';
-      pillTxt.textContent = down + ' service' + (down > 1 ? 's' : '') + ' down';
-    } else if (unknown) {
-      pillDot.className = 'dot unknown';
-      pillTxt.textContent = unknown + ' service' + (unknown > 1 ? 's' : '') + ' unknown';
-    } else {
-      pillDot.className = 'dot ok';
-      pillTxt.textContent = 'All services up';
-    }
-    $('services-grid').innerHTML = svcs.map((s) => {
-      const dotCls = s.status === 'up' ? 'ok' : s.status === 'down' ? 'bad' : 'unknown';
-      const resp = s.last_response_ms != null
-        ? s.last_response_ms.toFixed(0) + ' ms'
-        : (s.last_up === 0 ? 'failed' : '—');
-      const respCls = s.last_up === 0 ? 'down-text' : '';
-      const uptime = s.uptime_24h != null ? s.uptime_24h.toFixed(1) + '%' : '—';
-      const host = esc(s.url.replace(/^https?:\/\//, '').replace(/\/$/, ''));
-      let feedLine = '';
-      if (s.status_feed) {
-        const f = s.status_feed;
-        const feedCls = f.indicator === 'major' || f.indicator === 'critical' ? ' bad'
-          : (f.indicator === 'minor' || f.indicator === 'maintenance' ? ' warn' : '');
-        const incident = f.incidents && f.incidents.length ? f.incidents[0] : null;
-        feedLine = '<div class="svc-feed' + feedCls + '">' + esc(s.name) + ' reports: ' +
-          esc(f.description) +
-          (incident ? ' &mdash; ' + esc(incident.name) : '') +
-          ' <span class="svc-feed-asof">&middot; as of ' + relTime(f.fetched_ts) + '</span></div>';
-      }
-      const ddLink = s.downdetector_url
-        ? ' &middot; <a class="svc-dd" href="' + esc(s.downdetector_url) + '" target="_blank" rel="noopener">Downdetector &#8599;</a>'
-        : '';
-      return '<div class="service-card ' + (s.status === 'down' ? 'down' : '') + '">' +
-        '<div class="svc-name"><span class="dot ' + dotCls + '"></span>' + esc(s.name) + '</div>' +
-        '<div class="svc-url mono">' + host + '</div>' +
-        '<div class="svc-meta"><span class="' + respCls + '">' + resp + '</span><span>' + uptime + ' &middot; 24h</span></div>' +
-        feedLine +
-        '<div class="svc-checked">Checked ' + relTime(s.last_check_ts) + (s.interval_seconds ? ' &middot; every ' + fmtInterval(s.interval_seconds) : '') + ddLink + '</div>' +
-        '</div>';
-    }).join('') || '<div class="empty">No services configured — add some in config.yaml.</div>';
-  } catch (e) { console.error('services:', e); }
-
-  try {
-    const events = await api('/api/events');
-    if (!events.length) {
-      $('event-list').innerHTML = '<div class="empty">No outages recorded. Good — let&rsquo;s keep it that way.</div>';
-    } else {
-      $('event-list').innerHTML = events.map((ev) => {
-        const open = !ev.end_ts;
-        const dur = fmtDuration((open ? Math.floor(Date.now() / 1000) : ev.end_ts) - ev.start_ts);
-        const isSvc = ev.type.startsWith('service_down:');
-        const badgeText = isSvc ? 'service down' : ev.type;
-        const badgeCls = isSvc ? 'badge svc' : 'badge outage';
-        return '<div class="event"><span class="' + badgeCls + '">' + esc(badgeText) + '</span>' +
-          '<div><div class="when">' + fmtTime(ev.start_ts) +
-          (open ? ' &mdash; <span class="ongoing">ongoing</span>' : ' &mdash; ' + fmtTime(ev.end_ts)) + '</div>' +
-          '<div class="detail">Duration ' + dur + (ev.note ? ' &middot; ' + esc(ev.note) : '') + '</div></div></div>';
-      }).join('');
-    }
-  } catch (e) { console.error('events:', e); }
-}
-
-// ---------- device filter tabs ----------
-// Filtering is client-side on the last fetched list — no extra API calls.
-// The tab choice survives the 30s refresh cycle; default is Connected.
-let deviceFilter = 'online';
-let lastDevices = [];
-
-function setDeviceFilter(filter, btn) {
-  deviceFilter = filter;
-  document.querySelectorAll('.device-tabs .tab').forEach((t) => t.classList.remove('active'));
-  btn.classList.add('active');
-  renderDevices();
-}
-
-function renderDevices() {
-  const online = lastDevices.filter((d) => d.online);
-  const offline = lastDevices.filter((d) => !d.online);
-  $('count-online').textContent = online.length;
-  $('count-offline').textContent = offline.length;
-  $('count-all').textContent = lastDevices.length;
-  const shown = deviceFilter === 'online' ? online
-    : deviceFilter === 'offline' ? offline : lastDevices;
-  const emptyText = deviceFilter === 'online'
-    ? 'No devices online — first scan runs at startup.'
-    : deviceFilter === 'offline'
-    ? 'No offline devices. Everything seen is up.'
-    : 'No devices seen yet — first scan runs at startup.';
-  $('device-rows').innerHTML = shown.map(deviceRow).join('') ||
-    '<tr><td colspan="6" class="empty">' + emptyText + '</td></tr>';
-  // The sweep button is only useful when something offline exists.
-  $('btn-sweep').disabled = offline.length === 0;
-}
-
-async function sweepOffline() {
-  const n = lastDevices.filter((d) => !d.online).length;
-  if (!n) return;
-  if (!confirm('Remove ' + n + ' offline device' + (n > 1 ? 's' : '') +
-      ' from the list? Configured devices are kept.')) return;
-  const btn = $('btn-sweep');
-  const msg = $('sweep-msg');
-  btn.disabled = true;
-  try {
-    const res = await api('/api/devices/sweep-offline', { method: 'POST' });
-    msg.textContent = 'Removed ' + res.removed + ' offline device' +
-      (res.removed === 1 ? '' : 's') +
-      (res.kept_config ? ' (' + res.kept_config + ' configured device' +
-        (res.kept_config === 1 ? '' : 's') + ' kept)' : '') + '.';
-    msg.style.display = '';
-    lastDevices = await api('/api/devices');
-    renderDevices();
-  } catch (e) {
-    msg.textContent = 'Sweep failed: ' + e.message;
-    msg.style.display = '';
+  // latency card (1.1.1.1 primary, fall back to any external target)
+  const lat = st.latency['1.1.1.1'] || st.latency['8.8.8.8'];
+  if (lat && lat.success) {
+    $('stat-latency').innerHTML = lat.rtt_ms.toFixed(0) + '<small> ms</small>';
+    const others = Object.entries(st.latency)
+      .filter(([t]) => t !== '1.1.1.1')
+      .map(([t, v]) => t + ' ' + (v.success ? v.rtt_ms.toFixed(0) + ' ms' : 'down'))
+      .join(' · ');
+    $('stat-latency-sub').textContent = others || ' ';
+  } else {
+    $('stat-latency').textContent = '—';
+    $('stat-latency-sub').textContent = 'No successful probe yet';
   }
-  setTimeout(() => { msg.style.display = 'none'; }, 8000);
+
+  // speed card (last test only — run new tests from the Speed Tests page)
+  if (st.last_speedtest) {
+    const t = st.last_speedtest;
+    $('stat-speed').innerHTML = t.download_mbps.toFixed(0) + '<small> / ' + t.upload_mbps.toFixed(0) + ' Mbps</small>';
+    $('stat-speed-sub').textContent = '↓ ' + t.download_mbps.toFixed(0) + ' · ↑ ' + t.upload_mbps.toFixed(0) +
+      ' · ping ' + t.ping_ms.toFixed(0) + ' ms · ' + relTime(t.ts);
+  } else if (st.speedtest_running) {
+    $('stat-speed').textContent = '…';
+    $('stat-speed-sub').textContent = 'Test in progress';
+  } else {
+    $('stat-speed').textContent = '—';
+    $('stat-speed-sub').textContent = 'No tests yet';
+  }
+
+  // devices card
+  $('stat-devices').innerHTML = st.devices_online + '<small> / ' + st.devices_total + '</small>';
+  $('stat-devices-sub').textContent = 'Up ' + fmtDuration(st.uptime_seconds) + ' · server time ' +
+    new Date(st.server_time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  // one-line latest speed test summary
+  const line = $('speedline-text');
+  if (st.last_speedtest) {
+    const t = st.last_speedtest;
+    line.textContent = '↓ ' + t.download_mbps.toFixed(0) + ' Mbps · ↑ ' + t.upload_mbps.toFixed(0) +
+      ' Mbps · ping ' + t.ping_ms.toFixed(0) + ' ms · ' + relTime(t.ts);
+  } else if (st.speedtest_running) {
+    line.textContent = 'Test in progress…';
+  } else {
+    line.textContent = 'No speed tests yet.';
+  }
 }
 
-// ---------- actions ----------
-async function checkUpdates() {
-  const btn = $('btn-check-updates');
-  btn.disabled = true;
-  btn.textContent = 'Checking…';
-  let r;
-  try {
-    r = await fetch('/api/check-updates', { method: 'POST' });
-  } catch (e) {
-    btn.textContent = 'Couldn’t reach server';
-    setTimeout(() => { btn.disabled = false; btn.textContent = 'Check for updates'; }, 4000);
+function renderGlance(svcs) {
+  if (!svcs.length) {
+    $('services-glance').innerHTML = '<div class="empty">No services configured — add some in config.yaml.</div>';
     return;
   }
-  if (r.status === 401) { window.location.href = '/login'; return; }
-  if (r.status === 409) {
-    // No launcher — the button is hidden then, but handle it anyway.
-    btn.textContent = 'Updates need the launcher';
-    setTimeout(() => { btn.disabled = false; btn.textContent = 'Check for updates'; }, 5000);
-    return;
-  }
-  if (!r.ok) {
-    btn.textContent = 'Check failed — try again';
-    setTimeout(() => { btn.disabled = false; btn.textContent = 'Check for updates'; }, 4000);
-    return;
-  }
-  // Poll for a version change. The server goes down briefly while the
-  // child restarts, so connection errors just mean "keep waiting".
-  const oldVersion = $('footer-version').textContent;
-  const deadline = Date.now() + 45000;
-  const poll = async () => {
-    try {
-      const st = await api('/api/status');
-      updateCheckInfo = st.update_check || null;
-      renderUpdateCheckInfo();
-      const v = !st.version ? '' : (st.version === 'dev' ? 'dev build' : 'commit ' + st.version);
-      if (v !== oldVersion) {
-        btn.textContent = 'Updated — reloading…';
-        setTimeout(() => window.location.reload(), 1000);
-        return;
-      }
-    } catch (e) {
-      if (e.message === 'not authenticated') return; // api() already redirected
-      // Otherwise the server is mid-restart — keep polling.
-    }
-    if (Date.now() >= deadline) {
-      btn.textContent = 'You’re up to date';
-      setTimeout(() => { btn.disabled = false; btn.textContent = 'Check for updates'; }, 4000);
-      return;
-    }
-    setTimeout(poll, 2000);
-  };
-  setTimeout(poll, 2000);
+  $('services-glance').innerHTML = svcs.map((s) => {
+    const dotCls = s.status === 'up' ? 'ok' : s.status === 'down' ? 'bad' : 'unknown';
+    return '<a href="/services"><span class="dot ' + dotCls + '"></span>' + esc(s.name) + '</a>';
+  }).join('');
 }
 
-async function logout() {
-  try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { /* server unreachable — still leave */ }
-  window.location.href = '/login';
+async function refreshHome() {
+  const shared = await refreshShared();
+  if (shared.status) updateStatCards(shared.status);
+  if (shared.services) renderGlance(shared.services);
 }
 
-async function runSpeedtest() {
-  const btn = $('btn-speedtest');
-  btn.disabled = true; btn.textContent = 'Starting…';
-  try {
-    await api('/api/speedtest/run', { method: 'POST' });
-  } catch (e) {
-    btn.disabled = false; btn.textContent = 'Run speed test';
-    alert('Could not start speed test: ' + e.message);
-    return;
-  }
-  // Poll until the test finishes, then refresh the charts.
-  const poll = setInterval(async () => {
-    try {
-      const st = await api('/api/status');
-      if (!st.speedtest_running) {
-        clearInterval(poll);
-        refreshAll();
-        refreshCharts();
-      }
-    } catch (e) { clearInterval(poll); }
-  }, 5000);
-}
-
-async function wake(mac, btn) {
-  btn.disabled = true;
-  const orig = btn.textContent;
-  btn.textContent = 'Sending…';
-  try {
-    await api('/api/wol/' + encodeURIComponent(mac), { method: 'POST' });
-    btn.textContent = 'Sent ✓';
-    setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 3000);
-  } catch (e) {
-    btn.textContent = 'Failed';
-    setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 3000);
-    alert('Wake-on-LAN failed: ' + e.message);
-  }
-}
-
-// ---------- boot ----------
-refreshAll();
-refreshCharts();
-setInterval(refreshAll, 30000);    // status, devices, events
-setInterval(refreshCharts, 120000); // charts
+refreshHome();
+setInterval(refreshHome, 30000);
 </script>
 </body>
 </html>
