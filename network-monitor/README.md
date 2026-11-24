@@ -19,7 +19,7 @@ it remotely, use Tailscale (your PC's 100.x address, same port 8080).
 | Latency probe (every 1 min) | Pings 1.1.1.1, 8.8.8.8, the Deco (192.168.68.1) and the CAX30 (192.168.1.1) |
 | Speed test (hourly + on demand) | speedtest-cli, results stored and charted |
 | Outage detection | Opens an outage event when ALL external targets fail in one probe round; closes when any succeeds |
-| Down detector | HEAD health checks for the services in config.yaml (per-service intervals; Vercel sites every 3 hours); down after 2 consecutive failures, recovery on the first success |
+| Down detector | HEAD health checks for the services in config.yaml (per-service intervals; Vercel sites once a day); down after 2 consecutive failures, recovery on the first success. GitHub, Discord, and Cloudflare cards also show the vendor's own reported status from its official status feed |
 | Wake-on-LAN | Magic packet buttons for devices with `wol: true` in config.yaml |
 | Login (optional) | Password set with `python set_password.py`; session cookie lasts 7 days; 5 failed logins lock an IP out for 5 minutes |
 | Auto-updates (launcher) | `launcher.py` polls GitHub, pulls new commits, and restarts the monitor — see below |
@@ -70,8 +70,22 @@ timeout, or a DNS/connection failure is down.
 - **Per-service intervals:** each service may set its own
   `interval_seconds`; otherwise it uses the global
   `service_check_interval_seconds` (default 120). The Vercel sites are
-  checked every 3 hours on purpose — every 2 minutes would run up
+  checked once a day on purpose — every 2 minutes would run up
   Vercel usage for no benefit.
+
+- **Official status feeds:** GitHub, Discord, and Cloudflare publish
+  official status feeds (Atlassian Statuspage JSON), and the monitor
+  fetches them on the same cadence as the health check — set via a
+  service's `status_api_url` in config.yaml. The card then shows a second
+  line, e.g. "GitHub reports: All Systems Operational", plus the first
+  open incident name when there is one. **The feed is display only: it
+  never drives up/down, down events, or uptime %** — our own health check
+  is the source of truth for that. The feed answers the other question:
+  "does the vendor itself report a problem?" A failed feed fetch keeps
+  the last known state; a service that never fetched successfully simply
+  shows no feed line. Each card also carries a small "Downdetector ↗"
+  link to the service's Downdetector page (display only — the monitor
+  never fetches Downdetector, which has no free API).
 
 - **2-failure rule:** a service is only declared down after 2 consecutive
   failed checks, so a single blip never raises an alarm. It recovers on the
@@ -243,7 +257,8 @@ app/
   main.py       FastAPI app + API endpoints + dashboard route + login middleware
   auth.py       dashboard auth: PBKDF2 hashing, sessions, brute-force guard (stdlib only)
   collectors.py background jobs (scan / latency / speedtest / services / outages)
-  services.py   down detector: HTTP health checks + service status logic
+  services.py   down detector: HTTP health checks, official status feeds,
+                service status logic
   notifiers.py  pluggable alert notifiers (dashboard-only log notifier for now)
   identify.py   auto device identification (mDNS / NetBIOS / rDNS / OUI)
   oui.json      offline MAC-prefix -> vendor table (built from the IEEE list)
