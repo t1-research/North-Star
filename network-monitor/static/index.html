@@ -144,6 +144,12 @@
   }
   .service-card .svc-meta .down-text { color: var(--bad); }
   .service-card .svc-checked { color: var(--muted); font-size: 11.5px; margin-top: 4px; }
+  .service-card .svc-feed { font-size: 12px; margin-top: 6px; color: var(--muted); }
+  .service-card .svc-feed.warn { color: var(--warn); }
+  .service-card .svc-feed.bad { color: var(--bad); }
+  .service-card .svc-feed .svc-feed-asof { color: var(--muted); font-size: 11.5px; }
+  .service-card .svc-dd { color: var(--muted); text-decoration: none; }
+  .service-card .svc-dd:hover { color: var(--teal); text-decoration: underline; }
 
   /* ---------- events ---------- */
   .event {
@@ -230,7 +236,7 @@
 
   <section class="card">
     <h2>Services &mdash; down detector</h2>
-    <p class="hint">Most services are checked every 2 minutes; your Vercel sites every 3 hours to keep usage down. A service is declared down after 2 failed checks in a row; while the internet is down, everything shows as unknown.</p>
+    <p class="hint">Most services are checked every 2 minutes; your Vercel sites once a day to keep usage down. A service is declared down after 2 failed checks in a row; while the internet is down, everything shows as unknown.</p>
     <div class="services-grid" id="services-grid"><div class="empty">Loading&hellip;</div></div>
   </section>
 
@@ -240,7 +246,7 @@
     <div id="event-list"><div class="empty">Loading&hellip;</div></div>
   </section>
 
-  <footer>North Star Monitor v1.5 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span></footer>
+  <footer>North Star Monitor v1.6 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span></footer>
 </div>
 
 <script>
@@ -505,11 +511,26 @@ async function refreshAll() {
       const respCls = s.last_up === 0 ? 'down-text' : '';
       const uptime = s.uptime_24h != null ? s.uptime_24h.toFixed(1) + '%' : '—';
       const host = esc(s.url.replace(/^https?:\/\//, '').replace(/\/$/, ''));
+      let feedLine = '';
+      if (s.status_feed) {
+        const f = s.status_feed;
+        const feedCls = f.indicator === 'major' || f.indicator === 'critical' ? ' bad'
+          : (f.indicator === 'minor' || f.indicator === 'maintenance' ? ' warn' : '');
+        const incident = f.incidents && f.incidents.length ? f.incidents[0] : null;
+        feedLine = '<div class="svc-feed' + feedCls + '">' + esc(s.name) + ' reports: ' +
+          esc(f.description) +
+          (incident ? ' &mdash; ' + esc(incident.name) : '') +
+          ' <span class="svc-feed-asof">&middot; as of ' + relTime(f.fetched_ts) + '</span></div>';
+      }
+      const ddLink = s.downdetector_url
+        ? ' &middot; <a class="svc-dd" href="' + esc(s.downdetector_url) + '" target="_blank" rel="noopener">Downdetector &#8599;</a>'
+        : '';
       return '<div class="service-card ' + (s.status === 'down' ? 'down' : '') + '">' +
         '<div class="svc-name"><span class="dot ' + dotCls + '"></span>' + esc(s.name) + '</div>' +
         '<div class="svc-url mono">' + host + '</div>' +
         '<div class="svc-meta"><span class="' + respCls + '">' + resp + '</span><span>' + uptime + ' &middot; 24h</span></div>' +
-        '<div class="svc-checked">Checked ' + relTime(s.last_check_ts) + (s.interval_seconds ? ' &middot; every ' + fmtInterval(s.interval_seconds) : '') + '</div>' +
+        feedLine +
+        '<div class="svc-checked">Checked ' + relTime(s.last_check_ts) + (s.interval_seconds ? ' &middot; every ' + fmtInterval(s.interval_seconds) : '') + ddLink + '</div>' +
         '</div>';
     }).join('') || '<div class="empty">No services configured — add some in config.yaml.</div>';
   } catch (e) { console.error('services:', e); }
