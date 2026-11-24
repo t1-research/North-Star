@@ -87,19 +87,17 @@ latency_targets:
 #         named devices aren't probed at all. Most devices name themselves
 #         now, so only add entries to rename something or enable WoL — and
 #         add them in config.local.yaml, not here (see the header note).
-#   mac:  hardware address, e.g. "F8:3D:C6:9B:CA:5A"
+#   mac:  hardware address, e.g. "AA:BB:CC:DD:EE:FF"
 #   ip:   static/fixed IP, e.g. "192.168.68.68"
 #   wol:  true adds a Wake-on-LAN button. WoL needs the MAC address; if only an
 #         IP is given here, the MAC is learned from the first ARP scan.
-# These entries carry no names on purpose: the devices name themselves via
+# This entry carries no name on purpose: the device names itself via
 # auto-identification (NetBIOS gives the Windows computer name, mDNS the
-# Apple device name). The entries exist only to enable WoL — a nameless
+# Apple device name). The entry exists only to enable WoL — a nameless
 # entry is still probed, and its discovered name is what the dashboard
 # shows. The Deco isn't listed (it's discovered like any other LAN device)
 # and neither is the CAX30 (it's on another subnet, so it can't be
 # discovered — but it's still pinged as a latency target).
 devices:
-  - mac: "F8:3D:C6:9B:CA:5A"
-    wol: true
   - ip: "192.168.68.68"
     wol: true
