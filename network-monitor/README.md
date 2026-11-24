@@ -18,7 +18,7 @@ remotely, use Tailscale (your PC's 100.x address, same port 8080).
 | Latency probe (every 1 min) | Pings 1.1.1.1, 8.8.8.8, the Deco (192.168.68.1) and the CAX30 (192.168.1.1) |
 | Speed test (hourly + on demand) | speedtest-cli, results stored and charted |
 | Outage detection | Opens an outage event when ALL external targets fail in one probe round; closes when any succeeds |
-| Down detector (every 2 min) | HTTP health checks for the services in config.yaml; down after 2 consecutive failures, recovery on the first success |
+| Down detector | HEAD health checks for the services in config.yaml (per-service intervals; Vercel sites every 3 hours); down after 2 consecutive failures, recovery on the first success |
 | Wake-on-LAN | Magic packet buttons for devices with `wol: true` in config.yaml |
 | Auto-updates (launcher) | `launcher.py` polls GitHub, pulls new commits, and restarts the monitor — see below |
 | Dashboard | Status cards, 24h latency chart, 7d speed chart, device table, service status grid, event log |
@@ -56,10 +56,18 @@ device alongside the manual `name`.
 
 The `services` list in config.yaml names the websites and services the
 household actually uses (your own sites plus Google, GitHub, Steam, Discord,
-YouTube, Cloudflare). Every `service_check_interval_seconds` (default 120)
-the monitor GETs each URL with a 10-second timeout (stdlib urllib only —
-no extra dependency). A 2xx/3xx final status is up; 4xx/5xx, a timeout, or a
-DNS/connection failure is down.
+YouTube, Cloudflare). Every check is a HEAD request (no body downloaded —
+keeps usage down on metered hosts) with a 10-second timeout (stdlib urllib
+only — no extra dependency). When HEAD doesn't give a clean up answer, the
+check falls back to a GET capped at the first 1 KiB, so the down decision
+always rests on a real fetch. A 2xx/3xx final status is up; 4xx/5xx, a
+timeout, or a DNS/connection failure is down.
+
+- **Per-service intervals:** each service may set its own
+  `interval_seconds`; otherwise it uses the global
+  `service_check_interval_seconds` (default 120). The Vercel sites are
+  checked every 3 hours on purpose — every 2 minutes would run up
+  Vercel usage for no benefit.
 
 - **2-failure rule:** a service is only declared down after 2 consecutive
   failed checks, so a single blip never raises an alarm. It recovers on the
