@@ -50,6 +50,31 @@ def main():
         # Dashboard loads and carries the title
         status, body = get("/")
         assert status == 200 and b"North Star" in body, "dashboard missing"
+        # All five dashboard pages load with their own content
+        pages = {
+            "/": b"Services at a glance",
+            "/devices": b"Sweep offline",
+            "/speed-tests": b"Recent speed tests",
+            "/statistics": b"Service uptime",
+            "/services": b"Vercel sites once a day",
+        }
+        for path, marker in pages.items():
+            status, body = get(path)
+            assert status == 200 and marker in body, \
+                f"{path} missing marker {marker!r} (status {status})"
+        # Shared assets serve (the pages link /static/style.css + app.js)
+        for path in ("/static/style.css", "/static/app.js"):
+            status, body = get(path)
+            assert status == 200 and len(body) > 100, f"{path} -> {status}"
+        # No Events page (the Outages & events display was removed in v1.8)
+        # and no Network page (split into Speed Tests + Statistics).
+        # The /api/events endpoint still exists; only the pages are gone.
+        for path in ("/events", "/network"):
+            try:
+                get(path)
+                raise AssertionError(f"{path} should not exist")
+            except urllib.error.HTTPError as e:
+                assert e.code == 404, f"{path} -> {e.code}, expected 404"
         # Remaining endpoints answer 200
         for path in ("/api/devices", "/api/latency",
                      "/api/speedtests", "/api/events",
