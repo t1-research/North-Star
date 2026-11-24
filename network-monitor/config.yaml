@@ -101,3 +101,35 @@ latency_targets:
 devices:
   - ip: "192.168.68.68"
     wol: true
+
+# Deco restart (System page). The monitor logs into the MAIN unit's local
+# web interface and reboots by MAC list, so any combination of units can
+# restart while the others stay up — restart both satellites and the main
+# never reboots. Restarting the MAIN unit still drops the whole network
+# for ~1-2 min (it's the router), so its row carries a warning.
+#   host: the main unit — the only address the monitor connects to. The
+#         per-unit hosts below are kept for reference (and a possible
+#         per-host fallback); the restart itself is MAC-addressed
+#         through the main unit, so satellite IPs aren't needed.
+#   mac:  the unit's MAC (Deco app -> unit details, or the Devices page).
+#         Units with no MAC are skipped (not shown as restartable).
+#   main: true on the main unit only.
+# The password is the one used to sign into the Deco app; it goes in
+# config.local.yaml as `deco: {password: "..."}` — NEVER here (tracked
+# file, public repo). Until it's set, the System page shows the units
+# but the restart button stays off.
+deco:
+  host: "http://192.168.68.1"
+  units:
+    - name: "Living Room"
+      host: "http://192.168.68.1"
+      mac: "A8:6E:84:F6:BB:3D"
+      main: true
+    - name: "Bedroom"
+      host: ""
+      mac: "A8:6E:84:F6:BB:5B"
+      main: false
+    - name: "Main Bedroom"
+      host: ""
+      mac: "A8:6E:84:F6:BB:51"
+      main: false
