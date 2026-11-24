@@ -34,6 +34,11 @@ DEFAULTS = {
     "latency_targets": ["1.1.1.1", "8.8.8.8", "192.168.68.1", "192.168.1.1"],
     "devices": [],
     "services": [],
+    # Deco restart (System page): the main unit's web-interface address
+    # and the mesh units, each {name, host, mac, main}. The password
+    # lives in config.local.yaml as deco.password (the Deco app password)
+    # and is never in this tracked file. Units without a MAC are skipped.
+    "deco": {"host": "http://192.168.68.1", "units": []},
     # Launcher / auto-updates (launcher.py only; ignored by run.py).
     "auto_update": True,
     "update_check_interval_seconds": 300,
