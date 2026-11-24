@@ -12,7 +12,9 @@ What it does:
   3. Every `update_check_interval_seconds` (default 300, see config.yaml)
      it asks GitHub for the latest commit on the configured branch. When a
      push lands, it pulls and restarts the monitor — no manual stop or
-     restart, ever.
+     restart, ever. The dashboard footer has a "Check for updates" button
+     that drops a trigger file (data/update_check_requested) to run a
+     check immediately instead of waiting for the next interval.
   4. If launcher.py itself changed in the pull, the launcher re-execs
      itself so it never goes stale.
   5. If the child crashes, it restarts it with backoff (5s, 15s, 30s cap).
@@ -32,6 +34,7 @@ logs a warning once and just runs the monitor without update checks.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -66,6 +69,52 @@ def log(msg: str) -> None:
 def _handle_signal(signum, frame):  # noqa: ARG001
     global stopping
     stopping = True
+
+
+# Dashboard update checks: the web app drops a trigger file (in data/) to
+# ask for an immediate update check instead of waiting for the next
+# interval. The launcher consumes (deletes) it and runs the normal check
+# path. After every check it records the last/next check times in
+# data/update_status.json for the dashboard footer.
+UPDATE_TRIGGER_NAME = "update_check_requested"
+UPDATE_STATUS_NAME = "update_status.json"
+MANAGED_ENV = "NORTHSTAR_MANAGED"
+
+
+def trigger_path(app_dir: str) -> str:
+    return os.path.join(app_dir, "data", UPDATE_TRIGGER_NAME)
+
+
+def take_update_trigger(app_dir: str) -> bool:
+    """True if the dashboard asked for an update check: consume the
+    trigger file (delete it) and report it. Safe to call every second —
+    a missing file is the normal case."""
+    try:
+        os.remove(trigger_path(app_dir))
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+    return True
+
+
+def write_update_status(app_dir: str, last_check_ts, next_check_ts,
+                        interval: int) -> None:
+    """Record when the last update check ran and when the next one is due,
+    for the dashboard footer. Atomic (temp file + rename) so the app never
+    reads a partial file. Failures only warn — a missing status file must
+    never break the update loop."""
+    path = os.path.join(app_dir, "data", UPDATE_STATUS_NAME)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"last_check_ts": last_check_ts,
+                       "next_check_ts": next_check_ts,
+                       "interval_seconds": interval}, f)
+        os.replace(tmp, path)
+    except OSError as exc:
+        log(f"WARNING: could not write update status file ({exc}).")
 
 
 # ------------------------------------------------------------------- venv
@@ -158,8 +207,12 @@ def launcher_changed(repo_root: str, old_sha: str, new_sha: str) -> bool:
 
 def start_child(python: str, app_dir: str):
     """Start the monitor. Stdout/stderr are inherited, so its logs show in
-    the launcher console — one window to watch."""
-    return subprocess.Popen([python, "run.py"], cwd=app_dir)
+    the launcher console — one window to watch. NORTHSTAR_MANAGED tells
+    the app a launcher supervises it (enables the footer update button
+    and the last/next check display)."""
+    env = dict(os.environ)
+    env[MANAGED_ENV] = "1"
+    return subprocess.Popen([python, "run.py"], cwd=app_dir, env=env)
 
 
 def stop_child(proc) -> None:
@@ -202,6 +255,12 @@ def supervise(python: str, cfg: dict) -> None:
         log(f"Running version {git_short_sha()} (branch {branch}).")
     else:
         log("Running version dev (no git checkout).")
+    if auto_update and repo_root and git_ok:
+        # So the footer shows the next check time before the first check
+        # runs. (When checks can't run at all, no file is written and the
+        # footer line stays hidden.)
+        now = int(time.time())
+        write_update_status(APP_DIR, None, now + interval, interval)
 
     quick_failures = 0       # consecutive crashes within HEALTHY_UPTIME_SECONDS
     failures_since_update = 0  # quick failures since the last good update
@@ -238,10 +297,22 @@ def supervise(python: str, cfg: dict) -> None:
                     log(f"Restarting in {delay}s...")
                     time.sleep(delay)
                     break  # restart the child
+                # Dashboard "Check for updates" button: consume the trigger
+                # file (if any) and run the normal check path right now
+                # instead of waiting for the next interval. The loop
+                # already polls every second, so no sleep restructuring
+                # was needed — the trigger is just a second way in.
+                triggered = take_update_trigger(APP_DIR)
+                if triggered and not (auto_update and repo_root and git_ok):
+                    log("Update check requested from the dashboard, but "
+                        "auto-update is unavailable (no git repo, no git, "
+                        "or auto_update: false).")
                 if (auto_update and repo_root and git_ok
-                        and time.monotonic() >= next_check):
+                        and (triggered or time.monotonic() >= next_check)):
                     next_check = time.monotonic() + interval
                     new_head = remote_head(repo_root, remote, branch)
+                    now = int(time.time())
+                    write_update_status(APP_DIR, now, now + interval, interval)
                     if new_head is None:
                         log("Update check failed (no network?); "
                             "will retry next round.")
