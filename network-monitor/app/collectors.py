@@ -43,6 +43,11 @@ class Collectors:
         # restart resets the counters, worst case delaying a down alert by
         # one check cycle). Down state itself lives in the events table.
         self._svc_failures: dict[str, int] = {}
+        # Next-check time (time.monotonic) per service. Each service has
+        # its own interval (see services.service_interval); the scheduler
+        # ticks service_check() every service_check_interval_seconds and
+        # only due services are actually probed.
+        self._svc_next: dict[str, float] = {}
         # Auto-identification cache: device key ->
         # (discovered_name, name_source, last_probe_unix_ts). Names rarely
         # change, so a cached non-unknown result is trusted for an hour;
@@ -190,25 +195,37 @@ class Collectors:
     # ----------------------------------------------------- service checks
 
     def service_check(self) -> None:
-        """HTTP health-check every configured service (the down detector).
+        """HTTP health-check the services that are due (the down detector).
 
-        A service is declared down after 2 consecutive failures, and
-        recovers on the first success after that. Down windows are recorded
-        in the events table (one open event per service) and fanned out to
-        notifiers. When the internet itself is down, checks are skipped
-        (recorded as unknown) — no false service outages.
+        Each service has its own interval — its `interval_seconds` when
+        set, else the global `service_check_interval_seconds` — so
+        metered hosts (e.g. the Vercel sites) can be checked far less
+        often than everyone else. A service is declared down after 2
+        consecutive failures, and recovers on the first success after
+        that. Down windows are recorded in the events table (one open
+        event per service) and fanned out to notifiers. When the internet
+        itself is down, checks are skipped (recorded as unknown) — no
+        false service outages.
         """
         svc_list = self.cfg.get("services", [])
         if not svc_list:
             return
         now = int(time.time())
+        now_mono = time.monotonic()
+        due = [svc for svc in svc_list
+               if now_mono >= self._svc_next.get(svc["name"], 0)]
+        if not due:
+            return
         if services.external_latency_down(self.db_path, self.cfg):
-            for svc in svc_list:
+            for svc in due:
                 db.insert_service_check(self.db_path, now, svc["name"], None, None, None)
+                self._svc_next[svc["name"]] = (
+                    now_mono + services.service_interval(svc, self.cfg))
             print("[services] skipped — internet down, services unknown", flush=True)
             return
-        for svc in svc_list:
+        for svc in due:
             name, url = svc["name"], svc["url"]
+            self._svc_next[name] = now_mono + services.service_interval(svc, self.cfg)
             up, code, ms = services.check_service(url)
             db.insert_service_check(self.db_path, now, name, 1 if up else 0, code, ms)
             etype = services.down_event_type(name)
