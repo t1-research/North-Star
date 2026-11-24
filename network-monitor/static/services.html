@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>North Star Monitor — Services</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">&#9733;</div>
+    <div class="title">
+      <h1>North Star <span>Monitor</span></h1>
+      <p>Home network &middot; Deco mesh &middot; 192.168.68.0/24</p>
+    </div>
+    <div class="header-right">
+      <span class="pill" id="net-pill"><span class="dot ok" id="net-dot"></span><span id="net-text">Checking&hellip;</span></span>
+      <span class="pill" id="svc-pill"><span class="dot unknown" id="svc-dot"></span><span id="svc-text">Services&hellip;</span></span>
+      <span class="updated" id="updated"></span>
+    </div>
+  </header>
+
+  <nav class="main-nav" id="main-nav" aria-label="Dashboard pages"></nav>
+
+  <section class="card">
+    <h2>Services</h2>
+    <p class="hint">Checked every 2 minutes; Vercel sites once a day. A service shows as down after 2 failed checks.</p>
+    <div class="services-grid" id="services-grid"><div class="empty">Loading&hellip;</div></div>
+  </section>
+
+  <footer>North Star Monitor v1.8 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span><button class="ghost footer-btn" id="btn-check-updates" style="display:none" onclick="checkUpdates()">Check for updates</button><span id="update-check-info" style="display:none"></span></footer>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+'use strict';
+// Services: the down-detector grid, with the official status-feed line
+// per card. Reuses the services data refreshShared() already fetched
+// for the header pill — no second API call.
+
+function renderServicesGrid(svcs) {
+  $('services-grid').innerHTML = svcs.map((s) => {
+    const dotCls = s.status === 'up' ? 'ok' : s.status === 'down' ? 'bad' : 'unknown';
+    const resp = s.last_response_ms != null
+      ? s.last_response_ms.toFixed(0) + ' ms'
+      : (s.last_up === 0 ? 'failed' : '—');
+    const respCls = s.last_up === 0 ? 'down-text' : '';
+    const uptime = s.uptime_24h != null ? s.uptime_24h.toFixed(1) + '%' : '—';
+    const host = esc(s.url.replace(/^https?:\/\//, '').replace(/\/$/, ''));
+    let feedLine = '';
+    if (s.status_feed) {
+      const f = s.status_feed;
+      const feedCls = f.indicator === 'major' || f.indicator === 'critical' ? ' bad'
+        : (f.indicator === 'minor' || f.indicator === 'maintenance' ? ' warn' : '');
+      const incident = f.incidents && f.incidents.length ? f.incidents[0] : null;
+      feedLine = '<div class="svc-feed' + feedCls + '">' + esc(s.name) + ' reports: ' +
+        esc(f.description) +
+        (incident ? ' &mdash; ' + esc(incident.name) : '') +
+        ' <span class="svc-feed-asof">&middot; as of ' + relTime(f.fetched_ts) + '</span></div>';
+    }
+    const ddLink = s.downdetector_url
+      ? ' &middot; <a class="svc-dd" href="' + esc(s.downdetector_url) + '" target="_blank" rel="noopener">Downdetector &#8599;</a>'
+      : '';
+    return '<div class="service-card ' + (s.status === 'down' ? 'down' : '') + '">' +
+      '<div class="svc-name"><span class="dot ' + dotCls + '"></span>' + esc(s.name) + '</div>' +
+      '<div class="svc-url mono">' + host + '</div>' +
+      '<div class="svc-meta"><span class="' + respCls + '">' + resp + '</span><span>' + uptime + ' &middot; 24h</span></div>' +
+      feedLine +
+      '<div class="svc-checked">Checked ' + relTime(s.last_check_ts) + (s.interval_seconds ? ' &middot; every ' + fmtInterval(s.interval_seconds) : '') + ddLink + '</div>' +
+      '</div>';
+  }).join('') || '<div class="empty">No services configured — add some in config.yaml.</div>';
+}
+
+async function refreshServicesPage() {
+  const shared = await refreshShared();
+  if (shared.services) renderServicesGrid(shared.services);
+}
+
+refreshServicesPage();
+setInterval(refreshServicesPage, 30000);
+</script>
+</body>
+</html>
