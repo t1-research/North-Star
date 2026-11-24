@@ -7,7 +7,10 @@ takes care of everything from then on.
 
 What it does:
   1. Makes sure the venv exists and the dependencies are installed (same
-     self-heal as run.bat).
+     self-heal as run.bat). The check runs before EVERY child start, not
+     just at launcher startup — so a pull that adds a new requirement
+     installs it before the new child starts, instead of the child
+     crashing on a missing import.
   2. Starts the monitor (run.py) as a child process and supervises it.
   3. Every `update_check_interval_seconds` (default 300, see config.yaml)
      it asks GitHub for the latest commit on the configured branch. When a
@@ -129,10 +132,14 @@ def venv_python(app_dir: str):
 
 
 def ensure_venv(app_dir: str) -> str:
-    """Create the venv if missing; install deps if uvicorn can't be
-    imported. Returns the python to run the monitor with (venv python
-    preferred, sys.executable as fallback). Exits with a clear message if
-    no working python with dependencies can be produced."""
+    """Create the venv if missing; install deps if any required module
+    can't be imported. Returns the python to run the monitor with (venv
+    python preferred, sys.executable as fallback). Exits with a clear
+    message only if the CORE modules (fastapi/uvicorn) still can't be
+    imported after an install attempt — without those the monitor can't
+    run at all. A missing optional module (e.g. tplinkrouterc6u) only
+    warns: the monitor starts, and the feature that needs it reports
+    the missing library instead of the whole app dying."""
     python = venv_python(app_dir)
     if python is None:
         venv_dir = os.path.join(app_dir, "venv")
@@ -147,17 +154,57 @@ def ensure_venv(app_dir: str) -> str:
             python = sys.executable
         else:
             python = venv_python(app_dir) or sys.executable
-    check = subprocess.run([python, "-c", "import uvicorn"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if check.returncode != 0:
-        log("Installing dependencies (first run only)...")
-        r = subprocess.run([python, "-m", "pip", "install", "-r",
-                            os.path.join(app_dir, "requirements.txt")])
-        if r.returncode != 0:
-            log("ERROR: dependency install failed. Fix the error above, "
-                "then re-run the launcher.")
-            sys.exit(1)
+    ensure_deps(python, app_dir)
+    if not _modules_importable(python, CORE_MODULES):
+        log("ERROR: dependency install failed, and the monitor cannot run "
+            "without fastapi/uvicorn. Fix the error above, then re-run "
+            "the launcher.")
+        sys.exit(1)
     return python
+
+
+# Every module requirements.txt must provide, by import name (which
+# differs from the package name for speedtest-cli -> speedtest and
+# PyYAML -> yaml). Checked before every child start: a pull that adds a
+# requirement installs it before the new child starts.
+REQUIRED_MODULES = ("fastapi", "uvicorn", "speedtest", "yaml", "zeroconf",
+                    "tplinkrouterc6u")
+# Without these the monitor can't start at all (see ensure_venv).
+CORE_MODULES = ("fastapi", "uvicorn")
+
+
+def _modules_importable(python: str, modules) -> bool:
+    """True if every module in `modules` imports under `python`."""
+    code = "import " + ", ".join(modules)
+    check = subprocess.run([python, "-c", code],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return check.returncode == 0
+
+
+def ensure_deps(python: str, app_dir: str) -> bool:
+    """Make sure every required module imports; pip-install from
+    requirements.txt when one doesn't. Returns True when everything
+    imports afterwards. NON-FATAL: a failed install (no network, PyPI
+    down) only logs a warning and the launcher carries on — the child
+    may still run, and the feature needing the missing module reports
+    it cleanly. Callers that can't run without the core modules check
+    that separately (see ensure_venv)."""
+    if _modules_importable(python, REQUIRED_MODULES):
+        return True
+    log("Installing dependencies (a required module is missing)...")
+    r = subprocess.run([python, "-m", "pip", "install", "-r",
+                        os.path.join(app_dir, "requirements.txt")])
+    if r.returncode != 0:
+        log("WARNING: dependency install failed. The monitor will start "
+            "anyway; features needing the missing module will report it. "
+            "Re-run the launcher once the network is back to retry.")
+        return False
+    if not _modules_importable(python, REQUIRED_MODULES):
+        log("WARNING: pip reported success but a required module still "
+            "does not import. The monitor will start anyway; the "
+            "affected feature will report the missing module.")
+        return False
+    return True
 
 
 # -------------------------------------------------------------------- git
@@ -268,6 +315,11 @@ def supervise(python: str, cfg: dict) -> None:
     child = None
     try:
         while not stopping:
+            # A pull may have added a requirement since the last start —
+            # install it BEFORE the new child starts, or the child
+            # crashes on a missing import. Cheap when everything is
+            # already installed (one import check, no network).
+            ensure_deps(python, APP_DIR)
             child = start_child(python, APP_DIR)
             started = time.monotonic()
             next_check = time.monotonic() + interval
