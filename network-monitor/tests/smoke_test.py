@@ -133,6 +133,28 @@ def main():
         # Empty selection and unknown unit are 400s — but only reachable
         # with a password configured, so the sandbox (no password) gets
         # the 503 first. Those paths are covered in tests/test_deco.py.
+        # Web console: log tail answers with a lines list (empty here —
+        # no launcher runs in the sandbox, so no log file exists).
+        status, body = get("/api/console/log")
+        assert status == 200, f"console log -> {status}"
+        log_data = json.loads(body)
+        assert isinstance(log_data.get("lines"), list), "console log not a list"
+        # System page carries the web console section.
+        status, body = get("/system")
+        assert status == 200 and b"console-output" in body, \
+            "system page missing console section"
+        # Unknown console command is a 400; help works anywhere.
+        status, body = post_json("/api/console/command", {"command": "bogus"})
+        assert status == 400, f"console bogus -> {status}, expected 400"
+        status, body = post_json("/api/console/command", {"command": "help"})
+        assert status == 200 and body.get("ok") is True, \
+            f"console help -> {status} {body!r}"
+        # Restart with no launcher supervising is a 409 (a trigger file
+        # with no launcher would sit stale — a stale shutdown file
+        # would kill the next launcher start). The managed path is
+        # covered in tests/test_web_console.py.
+        status, body = post_json("/api/console/command", {"command": "restart"})
+        assert status == 409, f"console restart standalone -> {status}, expected 409"
         print("Smoke test passed.")
         return 0
     finally:
