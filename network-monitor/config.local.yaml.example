@@ -33,6 +33,14 @@
 # password (the running monitor only reads config at startup).
 # dashboard_password_hash: "<set with python set_password.py>"
 
+# --- Deco restart (System page) ---
+# The password is the one you use to sign into the Deco app. Restarting
+# stays disabled until this is set (the System page shows the units, but
+# the restart button stays off). Restart the monitor after adding it.
+# Like the dashboard password hash, this never goes in config.yaml.
+# deco:
+#   password: "your Deco app password"
+
 # --- Dashboard ---
 # port: 8080
 # host: "0.0.0.0"
