@@ -128,6 +128,26 @@ def delete_device(db_path, mac):
         conn.execute("DELETE FROM devices WHERE mac = ?", (mac,))
 
 
+def sweep_offline(db_path, keep_macs, keep_ips):
+    """Delete offline device rows, except rows matching keep_macs (MACs,
+    case-insensitive) or keep_ips — those are config-defined devices and
+    must survive even when offline. Online devices are never touched.
+    Returns (removed, kept)."""
+    keep_macs = {m.upper() for m in keep_macs}
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT mac, ip FROM devices WHERE online = 0").fetchall()
+        removed = kept = 0
+        for row in rows:
+            mac, ip = row["mac"], row["ip"]
+            if (mac and mac.upper() in keep_macs) or (ip and ip in keep_ips):
+                kept += 1
+                continue
+            conn.execute("DELETE FROM devices WHERE mac = ?", (mac,))
+            removed += 1
+        return removed, kept
+
+
 def update_discovered_name(db_path, mac, discovered_name, name_source):
     """Store an auto-identified name for a device. Never touches the manual
     `name` column — a config.yaml name always wins at display time."""
