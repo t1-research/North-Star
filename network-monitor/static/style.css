@@ -115,6 +115,32 @@ button.ghost:hover { background: var(--teal-dim); }
   color: var(--muted); font-size: 14px; text-align: center; padding: 40px 0;
 }
 
+/* ---------- Deco restart (System page) ---------- */
+/* Mirrors the Deco app's "Select Deco" reboot screen: checkbox rows
+   (name + Main badge + MAC), a Select/Deselect all toggle, and a
+   "Restart selected (N)" button with a live count. */
+.deco-tools { margin-bottom: 6px; }
+.deco-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 4px; border-bottom: 1px solid var(--border); cursor: pointer;
+}
+.deco-row:last-child { border-bottom: none; }
+.deco-row.disabled { opacity: 0.6; cursor: not-allowed; }
+.deco-row input[type="checkbox"] {
+  width: 20px; height: 20px; accent-color: var(--teal); flex: none; cursor: pointer;
+}
+.deco-row input[type="checkbox"]:disabled { cursor: not-allowed; }
+.deco-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.deco-name { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.deco-badge {
+  font-size: 11px; font-weight: 700; color: var(--teal);
+  background: var(--teal-dim); border-radius: 999px; padding: 2px 8px;
+}
+.deco-mac { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.deco-warn { color: var(--warn); font-size: 12px; }
+.deco-actions { display: flex; align-items: center; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
+.deco-status { color: var(--muted); font-size: 13px; }
+
 /* ---------- device table ---------- */
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th {
