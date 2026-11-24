@@ -1,0 +1,11 @@
+# North Star — files that stay local to each machine, never committed.
+data/
+__pycache__/
+*.pyc
+venv/
+.venv/
+config.local.yaml
+*.db
+*.db-wal
+*.db-shm
+*.log

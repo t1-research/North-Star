@@ -1,0 +1,31 @@
+# North Star Monitor — LOCAL overrides.
+# Copy this file to `config.local.yaml` (same folder) and edit THAT file.
+# config.local.yaml is NOT tracked by git, so your edits never block the
+# launcher's `git pull`. Rule: edit config.local.yaml on your PC, never
+# config.yaml — edits to tracked files stop every auto-update.
+#
+# How merging works: nested settings merge key-by-key; lists and single
+# values replace. The one exception is `devices`, which merges entry by
+# entry (matched by MAC, then IP): list only the devices you want to add
+# or change — the rest of the tracked list stays as-is.
+
+# --- Launcher / auto-updates (launcher.py only) ---
+# auto_update: false              # uncomment to stop automatic pulls (the launcher still supervises)
+# update_check_interval_seconds: 300
+
+# --- Intervals ---
+# scan_interval_seconds: 120
+# latency_interval_seconds: 60
+# speedtest_interval_seconds: 3600
+# service_check_interval_seconds: 120
+
+# --- Devices: rename one, or add a WoL button ---
+# devices:
+#   - name: "My iPhone"
+#     mac: "AA:BB:CC:DD:EE:FF"
+#   - name: "Printer"
+#     ip: "192.168.68.50"
+
+# --- Dashboard ---
+# port: 8080
+# host: "0.0.0.0"

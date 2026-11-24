@@ -1,0 +1,32 @@
+name: network-monitor CI
+
+on:
+  push:
+    paths:
+      - "network-monitor/**"
+      - ".github/workflows/ci-network-monitor.yml"
+  pull_request:
+    paths:
+      - "network-monitor/**"
+      - ".github/workflows/ci-network-monitor.yml"
+
+jobs:
+  smoke:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: network-monitor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Byte-compile (syntax check)
+        run: python -m compileall app run.py tests
+      - name: Smoke test (start server, hit all endpoints)
+        run: python tests/smoke_test.py
