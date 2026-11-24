@@ -178,6 +178,7 @@
       <span class="pill" id="svc-pill"><span class="dot unknown" id="svc-dot"></span><span id="svc-text">Services&hellip;</span></span>
       <span class="updated" id="updated"></span>
       <button id="btn-speedtest" onclick="runSpeedtest()">Run speed test</button>
+      <button class="ghost" onclick="logout()">Log out</button>
     </div>
   </header>
 
@@ -239,7 +240,7 @@
     <div id="event-list"><div class="empty">Loading&hellip;</div></div>
   </section>
 
-  <footer>North Star Monitor v1.4 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span></footer>
+  <footer>North Star Monitor v1.5 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span></footer>
 </div>
 
 <script>
@@ -284,6 +285,8 @@ function esc(s) {
 }
 async function api(path, opts) {
   const r = await fetch(path, opts);
+  // Session expired or signed out elsewhere: back to the login page.
+  if (r.status === 401) { window.location.href = '/login'; throw new Error('not authenticated'); }
   if (!r.ok) throw new Error(path + ' -> HTTP ' + r.status);
   return r.json();
 }
@@ -532,6 +535,11 @@ async function refreshAll() {
 }
 
 // ---------- actions ----------
+async function logout() {
+  try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { /* server unreachable — still leave */ }
+  window.location.href = '/login';
+}
+
 async function runSpeedtest() {
   const btn = $('btn-speedtest');
   btn.disabled = true; btn.textContent = 'Starting…';
