@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, db, services, updates
+from . import auth, db, deco, services, updates
 from .collectors import Collectors
 from .config import (DB_PATH, PROJECT_ROOT, build_device_lookups,
                    git_short_sha, load_config)
@@ -163,6 +163,11 @@ def services_page():
     return FileResponse(os.path.join(STATIC_DIR, "services.html"))
 
 
+@app.get("/system")
+def system_page():
+    return FileResponse(os.path.join(STATIC_DIR, "system.html"))
+
+
 # ------------------------------------------------------------------- API
 
 @app.get("/api/status")
@@ -184,6 +189,11 @@ def status():
         "uptime_seconds": int(time.time() - START_TIME),
         "version": VERSION,
         "managed": MANAGED,
+        # Deco restart (System page): whether the Deco password is set,
+        # and the units that can be restarted (config entries with a
+        # usable MAC — MAC-less entries are skipped).
+        "deco_configured": bool((CFG.get("deco") or {}).get("password")),
+        "deco_units": deco.configured_units(CFG),
         # Last/next update check, from the launcher's status file; null
         # when standalone, or when the launcher hasn't written one yet.
         "update_check": (updates.read_update_status(PROJECT_ROOT)
@@ -252,6 +262,64 @@ def check_updates():
     if result == "no_launcher":
         return JSONResponse(status_code=409, content={"status": "no_launcher"})
     return {"status": result}
+
+
+@app.post("/api/deco/reboot")
+async def reboot_deco(request: Request):
+    """Restart Deco mesh units, individually or in any combination.
+    Body: {"units": ["Living Room", "Bedroom"]}. Only the named units
+    reboot — the rest of the mesh stays up. Restarting the main unit
+    still drops the whole network for ~1-2 min (it's the router); the
+    frontend warns about that before sending. Sync endpoint (runs in a
+    threadpool): the Deco calls block for a few seconds."""
+    cfg_deco = CFG.get("deco") or {}
+    password = cfg_deco.get("password") or ""
+    if not password:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "deco_not_configured",
+                     "detail": "No Deco password set — add deco.password "
+                               "(your Deco app password) to "
+                               "config.local.yaml, then restart the monitor."})
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    names = body.get("units") if isinstance(body, dict) else None
+    if not isinstance(names, list) or not names:
+        raise HTTPException(status_code=400,
+                            detail="No units selected — send "
+                                   '{"units": ["<name>", ...]}.')
+    # Dedupe, keeping the requested order.
+    wanted = list(dict.fromkeys(str(n) for n in names))
+    units = {u["name"]: u for u in deco.configured_units(CFG)}
+    unknown = [n for n in wanted if n not in units]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown Deco unit(s): {', '.join(unknown)}. "
+                   f"Configured units: {', '.join(units) or 'none'}.")
+    try:
+        results = deco.reboot_units(
+            cfg_deco.get("host") or "http://192.168.68.1", password,
+            [units[n] for n in wanted])
+    except deco.DecoUnavailable as exc:
+        return JSONResponse(status_code=503,
+                            content={"error": "deco_library_missing",
+                                     "detail": str(exc)})
+    except deco.DecoAuthError as exc:
+        return JSONResponse(status_code=502,
+                            content={"error": "deco_login_failed",
+                                     "detail": str(exc)})
+    except deco.DecoUnreachable as exc:
+        return JSONResponse(status_code=502,
+                            content={"error": "deco_unreachable",
+                                     "detail": str(exc)})
+    except deco.DecoApiError as exc:
+        return JSONResponse(status_code=502,
+                            content={"error": "deco_api_error",
+                                     "detail": str(exc)})
+    return {"results": results}
 
 
 @app.post("/api/speedtest/run", status_code=202)
