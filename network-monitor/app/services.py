@@ -13,10 +13,17 @@ recovers on the first success after that — see Collectors.service_check().
 When the internet itself is down (all external latency targets failing),
 checks are skipped and services report "unknown" instead of a pile of
 false service outages.
+
+Services with a `status_api_url` in config also get their vendor's
+official status feed fetched (Atlassian Statuspage /api/v2/summary.json
+format). The feed is display only: it never affects up/down state, down
+events, the 2-failure rule, or uptime %. It answers "does the vendor
+itself report a problem?" next to our own "is it reachable from here?"
 """
 from __future__ import annotations
 
 import ipaddress
+import json
 import time
 import urllib.error
 import urllib.request
@@ -69,6 +76,77 @@ def check_service(url: str, timeout: float = 10.0) -> tuple[bool, int | None, fl
     return _request_once(url, "GET", timeout)
 
 
+# --------------------------------------------------- official status feeds
+
+# Atlassian Statuspage indicator values, worst first.
+STATUS_INDICATORS = ("none", "maintenance", "minor", "major", "critical")
+MAX_INCIDENTS = 3  # most recent open incidents kept per feed fetch
+
+
+def _parse_status_feed(data) -> dict | None:
+    """Parse a Statuspage /api/v2/summary.json payload into
+    {indicator, description, incidents: [{name, status, impact}]}.
+    Returns None when the payload isn't usable (wrong shape, missing
+    status block). Never raises."""
+    try:
+        if not isinstance(data, dict):
+            return None
+        status = data.get("status")
+        if not isinstance(status, dict):
+            return None
+        indicator = status.get("indicator")
+        description = status.get("description")
+        if not isinstance(indicator, str) or not isinstance(description, str):
+            return None
+        if indicator not in STATUS_INDICATORS:
+            return None
+        incidents = data.get("incidents", [])
+        if not isinstance(incidents, list):
+            return None
+        parsed = []
+        for inc in incidents:
+            if not isinstance(inc, dict):
+                continue
+            name = inc.get("name")
+            if not isinstance(name, str):
+                continue
+            parsed.append({
+                "name": name,
+                "status": inc.get("status") if isinstance(inc.get("status"), str) else "",
+                "impact": inc.get("impact") if isinstance(inc.get("impact"), str) else "",
+                "created_at": inc.get("created_at") if isinstance(inc.get("created_at"), str) else "",
+            })
+        # Most recent first (Statuspage usually already orders this way;
+        # sort defensively on created_at, which is ISO-8601).
+        parsed.sort(key=lambda i: i["created_at"], reverse=True)
+        for inc in parsed:
+            del inc["created_at"]
+        return {
+            "indicator": indicator,
+            "description": description,
+            "incidents": parsed[:MAX_INCIDENTS],
+        }
+    except Exception:  # noqa: BLE001 — any malformed payload is "no feed"
+        return None
+
+
+def fetch_status_feed(url: str, timeout: float = 10.0) -> dict | None:
+    """Fetch + parse one vendor's official status feed (Statuspage JSON).
+    Returns {indicator, description, incidents} or None on any failure
+    (timeout, non-200, bad JSON, unusable payload). Never raises — a
+    failed fetch keeps the last known feed state (see collectors)."""
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT},
+                                 method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                return None
+            raw = resp.read(1_000_000)  # feeds are small; cap at 1 MB
+        return _parse_status_feed(json.loads(raw.decode("utf-8")))
+    except Exception:  # noqa: BLE001 — DNS/timeout/HTTP/JSON: all "no feed"
+        return None
+
+
 def external_latency_down(db_path: str, cfg: dict) -> bool:
     """True when every external latency target's latest probe failed.
 
@@ -102,6 +180,7 @@ def current_statuses(cfg: dict, db_path: str, failures: dict | None = None) -> l
     failures = failures or {}
     outage_open = db.get_open_event(db_path, "outage") is not None
     latest = db.latest_service_checks(db_path)
+    feeds = db.latest_service_status(db_path)
     since = int(time.time()) - 24 * 3600
     out = []
     for svc in cfg.get("services", []):
@@ -115,6 +194,7 @@ def current_statuses(cfg: dict, db_path: str, failures: dict | None = None) -> l
             status = "unknown"
         else:
             status = "up"
+        feed = feeds.get(name)
         out.append({
             "name": name,
             "url": svc["url"],
@@ -126,5 +206,17 @@ def current_statuses(cfg: dict, db_path: str, failures: dict | None = None) -> l
             "last_up": row["up"] if row else None,
             "uptime_24h": db.service_uptime_since(db_path, name, since),
             "consecutive_failures": failures.get(name, 0),
+            # Official status feed (display only — never drives up/down).
+            "status_feed": None if feed is None else {
+                "indicator": feed["indicator"],
+                "description": feed["description"],
+                "incidents": [
+                    {"name": i.get("name"), "status": i.get("status")}
+                    for i in feed["incidents"]
+                ],
+                "fetched_ts": feed["ts"],
+            },
+            # Display-only link; the monitor never fetches Downdetector.
+            "downdetector_url": svc.get("downdetector_url"),
         })
     return out
