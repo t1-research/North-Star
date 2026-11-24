@@ -34,28 +34,44 @@ service_check_interval_seconds: 120  # down detector (HTTP health checks)
 # down, checks are skipped and every service shows as "unknown" instead of
 # a pile of false outages.
 # Each service may set its own interval_seconds (default: the global
-# service_check_interval_seconds above). The Vercel sites are checked every
-# 3 hours on purpose — checking them every 2 minutes would run up
+# service_check_interval_seconds above). The Vercel sites are checked once
+# a day on purpose — checking them every 2 minutes would run up
 # Vercel usage for no benefit.
+# Optional per-service keys:
+#   status_api_url: the vendor's official status feed (Atlassian Statuspage
+#     /api/v2/summary.json). Fetched on the same cadence as the health
+#     check; display only — it never drives up/down. Only GitHub, Discord
+#     and Cloudflare publish one of these.
+#   downdetector_url: display-only link to the service's Downdetector page
+#     (shown on the dashboard card; the monitor never fetches it).
 services:
   - name: "T1 Research"
     url: "https://t1-research.vercel.app/"
-    interval_seconds: 10800  # 3 hours — keep Vercel usage down
+    interval_seconds: 86400  # once a day — keep Vercel usage down
   - name: "Walton Press Co"
     url: "https://waltonpressco.vercel.app/"
-    interval_seconds: 10800  # 3 hours — keep Vercel usage down
+    interval_seconds: 86400  # once a day — keep Vercel usage down
   - name: "Google"
     url: "https://www.google.com"
+    downdetector_url: "https://downdetector.com/status/google/"
   - name: "GitHub"
     url: "https://github.com"
+    status_api_url: "https://www.githubstatus.com/api/v2/summary.json"
+    downdetector_url: "https://downdetector.com/status/github/"
   - name: "Steam"
     url: "https://store.steampowered.com"
+    downdetector_url: "https://downdetector.com/status/steam/"
   - name: "Discord"
     url: "https://discord.com"
+    status_api_url: "https://discordstatus.com/api/v2/summary.json"
+    downdetector_url: "https://downdetector.com/status/discord/"
   - name: "YouTube"
     url: "https://www.youtube.com"
+    downdetector_url: "https://downdetector.com/status/youtube/"
   - name: "Cloudflare"
     url: "https://www.cloudflare.com"
+    status_api_url: "https://www.cloudflarestatus.com/api/v2/summary.json"
+    downdetector_url: "https://downdetector.com/status/cloudflare/"
 
 # Latency probe targets. External targets (public IPs) drive outage detection:
 # an outage opens when ALL of them fail in the same probe round.
