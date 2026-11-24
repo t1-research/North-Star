@@ -17,9 +17,14 @@ Tables:
   service_checks — one row per service health check (down detector).
                up is 1/0, or NULL when the check was skipped because the
                internet itself was down (service state "unknown").
+  service_status — latest official status-feed state per service (one row
+               per service, overwritten on every successful feed fetch).
+               Display only: the feed never drives up/down state.
+               incidents_json holds a JSON list of {name, status, impact}.
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 
@@ -65,6 +70,13 @@ CREATE TABLE IF NOT EXISTS service_checks (
 );
 CREATE INDEX IF NOT EXISTS idx_service_checks_ts ON service_checks(ts);
 CREATE INDEX IF NOT EXISTS idx_service_checks_service ON service_checks(service);
+CREATE TABLE IF NOT EXISTS service_status (
+    service      TEXT PRIMARY KEY,
+    ts           INTEGER NOT NULL,
+    indicator    TEXT NOT NULL,
+    description  TEXT NOT NULL,
+    incidents_json TEXT NOT NULL DEFAULT '[]'
+);
 """
 
 
@@ -306,3 +318,43 @@ def service_checks_since(db_path, since_ts, limit=20000):
             (since_ts, limit),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------- service_status
+
+def upsert_service_status(db_path, service, ts, indicator, description, incidents):
+    """Store the latest official status-feed state for one service.
+    Overwrites the previous row — latest state only, no history."""
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO service_status (service, ts, indicator, description, incidents_json)"
+            " VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT(service) DO UPDATE SET"
+            " ts = excluded.ts, indicator = excluded.indicator,"
+            " description = excluded.description,"
+            " incidents_json = excluded.incidents_json",
+            (service, ts, indicator, description, json.dumps(incidents)),
+        )
+
+
+def latest_service_status(db_path):
+    """Latest feed state per service:
+    {name: {ts, indicator, description, incidents: [{name, status, impact}]}}.
+    Services with no successful feed fetch yet are absent."""
+    with _connect(db_path) as conn:
+        rows = conn.execute("SELECT * FROM service_status").fetchall()
+    out = {}
+    for r in rows:
+        try:
+            incidents = json.loads(r["incidents_json"])
+            if not isinstance(incidents, list):
+                incidents = []
+        except (ValueError, TypeError):
+            incidents = []
+        out[r["service"]] = {
+            "ts": r["ts"],
+            "indicator": r["indicator"],
+            "description": r["description"],
+            "incidents": incidents,
+        }
+    return out
