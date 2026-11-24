@@ -1,8 +1,12 @@
 """Down detector: HTTP health checks for the services this network uses.
 
-Each configured service gets a plain HTTP GET (stdlib urllib only) every
+Each configured service gets a HEAD request (no body downloaded) every
+interval — its own `interval_seconds` when set, else the global
 `service_check_interval_seconds`. A 2xx/3xx final status counts as up;
-4xx/5xx, a timeout, or a DNS/connection failure counts as down.
+4xx/5xx, a timeout, or a DNS/connection failure counts as down. When HEAD
+doesn't give a clean up answer (some servers refuse HEAD or answer it
+oddly), the check falls back to a GET capped at the first 1 KiB, so the
+down decision is always based on a real page fetch.
 
 A service is only *declared* down after 2 consecutive failures, and it
 recovers on the first success after that — see Collectors.service_check().
@@ -24,18 +28,27 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NorthStarMonitor/1.0"
 DOWN_EVENT_PREFIX = "service_down:"
 
 
-def check_service(url: str, timeout: float = 10.0) -> tuple[bool, int | None, float | None]:
-    """GET a URL once. Returns (up, status_code, response_ms).
+def service_interval(svc: dict, cfg: dict) -> int:
+    """Check interval for one service (seconds): its own `interval_seconds`
+    when set, else the global `service_check_interval_seconds` default."""
+    return int(svc.get("interval_seconds",
+                       cfg.get("service_check_interval_seconds", 120)))
+
+
+def _request_once(url: str, method: str, timeout: float) -> tuple[bool, int | None, float | None]:
+    """One HTTP request. Returns (up, status_code, response_ms).
 
     `status_code`/`response_ms` are None when the request never got an
-    answer (DNS failure, timeout, connection refused). Only the first
-    1 KiB of the body is read — we care about the status, not the page.
+    answer (DNS failure, timeout, connection refused). A GET reads only
+    the first 1 KiB of the body — we care about the status, not the page.
     """
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT},
+                                 method=method)
     start = time.monotonic()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            resp.read(1024)
+            if method == "GET":
+                resp.read(1024)
             code = resp.status
     except urllib.error.HTTPError as exc:
         # The server answered with an error status — record the code.
@@ -44,6 +57,16 @@ def check_service(url: str, timeout: float = 10.0) -> tuple[bool, int | None, fl
         return False, None, None
     ms = (time.monotonic() - start) * 1000
     return 200 <= code < 400, code, ms
+
+
+def check_service(url: str, timeout: float = 10.0) -> tuple[bool, int | None, float | None]:
+    """HEAD first (no body downloaded — keeps usage down on metered hosts);
+    fall back to a 1 KiB-capped GET when HEAD doesn't give a clean up
+    answer, so the down decision always rests on a real fetch."""
+    up, code, ms = _request_once(url, "HEAD", timeout)
+    if up:
+        return up, code, ms
+    return _request_once(url, "GET", timeout)
 
 
 def external_latency_down(db_path: str, cfg: dict) -> bool:
@@ -96,6 +119,7 @@ def current_statuses(cfg: dict, db_path: str, failures: dict | None = None) -> l
             "name": name,
             "url": svc["url"],
             "status": status,
+            "interval_seconds": service_interval(svc, cfg),
             "last_check_ts": row["ts"] if row else None,
             "last_response_ms": row["response_ms"] if row else None,
             "last_status_code": row["status_code"] if row else None,
