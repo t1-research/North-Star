@@ -15,9 +15,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
-from . import auth, db, services
+from . import auth, db, services, updates
 from .collectors import Collectors
-from .config import DB_PATH, PROJECT_ROOT, git_short_sha, load_config
+from .config import (DB_PATH, PROJECT_ROOT, build_device_lookups,
+                   git_short_sha, load_config)
 from .network import is_valid_mac, normalize_mac, subnet_broadcast
 from .wol import send_magic_packet
 
@@ -34,6 +35,12 @@ AUTH_ENABLED = isinstance(PASSWORD_HASH, str) and bool(PASSWORD_HASH)
 if not AUTH_ENABLED:
     print("WARNING: No dashboard password set — dashboard is open to your "
           "LAN. Run set_password.py to protect it.", flush=True)
+
+# True when the launcher supervises this process (it sets
+# NORTHSTAR_MANAGED=1 in the child's environment). The footer "Check for
+# updates" button and the last/next check times only render when this is
+# true — a standalone run.py has no launcher to ask.
+MANAGED = updates.is_managed()
 
 collectors = Collectors(CFG, DB_PATH)
 
@@ -150,12 +157,29 @@ def status():
         "started_at": int(START_TIME),
         "uptime_seconds": int(time.time() - START_TIME),
         "version": VERSION,
+        "managed": MANAGED,
+        # Last/next update check, from the launcher's status file; null
+        # when standalone, or when the launcher hasn't written one yet.
+        "update_check": (updates.read_update_status(PROJECT_ROOT)
+                         if MANAGED else None),
     }
 
 
 @app.get("/api/devices")
 def devices():
     return db.list_devices(DB_PATH)
+
+
+@app.post("/api/devices/sweep-offline")
+def sweep_offline():
+    """Delete offline device rows, except devices defined in config.yaml
+    (matched by MAC, then IP) — config entries are intentional (notably
+    the PC WoL entries) and must survive even when the device is offline.
+    Online devices are never touched. The frontend confirm dialog is the
+    only guard; there is no confirmation on the backend."""
+    by_mac, by_ip = build_device_lookups(CFG)
+    removed, kept = db.sweep_offline(DB_PATH, set(by_mac), set(by_ip))
+    return {"removed": removed, "kept_config": kept}
 
 
 @app.get("/api/latency")
@@ -190,6 +214,18 @@ def services_history(hours: int = 24):
     """Per-service check history. `hours` caps the window (default 24)."""
     hours = max(1, min(hours, 24 * 30))
     return db.service_checks_since(DB_PATH, int(time.time()) - hours * 3600)
+
+
+@app.post("/api/check-updates")
+def check_updates():
+    """Ask the launcher to check GitHub for updates now instead of
+    waiting for the next periodic check. Gated by the auth middleware
+    like every other /api/* route (only /api/login and /api/logout are
+    public). 409 when no launcher supervises this process."""
+    result = updates.request_update_check(PROJECT_ROOT)
+    if result == "no_launcher":
+        return JSONResponse(status_code=409, content={"status": "no_launcher"})
+    return {"status": result}
 
 
 @app.post("/api/speedtest/run", status_code=202)
