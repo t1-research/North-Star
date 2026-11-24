@@ -24,7 +24,7 @@ subnet: "192.168.68.0/24"
 # Collector intervals (seconds)
 scan_interval_seconds: 120      # device scan (ping sweep + ARP)
 latency_interval_seconds: 60    # latency probe
-speedtest_interval_seconds: 3600  # automatic speed test (hourly)
+speedtest_interval_seconds: 900   # automatic speed test (every 15 min)
 service_check_interval_seconds: 120  # down detector (HTTP health checks)
 
 # Services to watch (the down detector). Each gets a HEAD request (no body
@@ -75,19 +75,15 @@ latency_targets:
 #   ip:   static/fixed IP, e.g. "192.168.68.68"
 #   wol:  true adds a Wake-on-LAN button. WoL needs the MAC address; if only an
 #         IP is given here, the MAC is learned from the first ARP scan.
+# These entries carry no names on purpose: the devices name themselves via
+# auto-identification (NetBIOS gives the Windows computer name, mDNS the
+# Apple device name). The entries exist only to enable WoL — a nameless
+# entry is still probed, and its discovered name is what the dashboard
+# shows. The Deco isn't listed (it's discovered like any other LAN device)
+# and neither is the CAX30 (it's on another subnet, so it can't be
+# discovered — but it's still pinged as a latency target).
 devices:
-  - name: "Gaming PC (Wi-Fi)"
-    mac: "F8:3D:C6:9B:CA:5A"
+  - mac: "F8:3D:C6:9B:CA:5A"
     wol: true
-  - name: "Gaming PC (Ethernet)"
-    ip: "192.168.68.68"
+  - ip: "192.168.68.68"
     wol: true
-  - name: "NAS"
-    ip: "192.168.68.66"
-    wol: true
-  - name: "Deco (gateway)"
-    ip: "192.168.68.1"
-    wol: false
-  - name: "CAX30 (modem/router)"
-    ip: "192.168.1.1"
-    wol: false
