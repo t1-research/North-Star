@@ -14,7 +14,7 @@ is optional but recommended — set one with `python set_password.py`
 reach it remotely, use Tailscale (your PC's 100.x address, same port
 8080).
 
-Current state: repo v0.7.1, dashboard v1.9.
+Current state: repo v0.8.0, dashboard v2.0.
 
 ## What it is
 
@@ -455,6 +455,18 @@ the monitor again.
   now, `quit` stops the monitor and the launcher cleanly, `help` lists
   the commands. Headless runs (Task Scheduler, piped stdin) have no
   console, so no commands — everything else works the same.
+- **Web console (System page):** the same four commands from the
+  dashboard, so you never have to type in the PC's console window. The
+  page tails the launcher's log (`data/launcher.log`, bounded to the
+  last 500 lines) and sends commands through trigger files
+  (`data/restart_requested`, `data/shutdown_requested`,
+  `data/update_check_requested`) — the web app never talks to the
+  launcher any other way. Commands are an allowlist lookup only: the
+  input is never passed to a shell, subprocess, eval, or exec — there
+  is no freeform shell access from the web. `quit` stops the monitor
+  completely and there is no remote way back up: restart it on the PC
+  with `run_launcher.bat`. Restart/update/quit need the launcher
+  (standalone `run.py` answers 409); `help` works anywhere.
 - **Disable auto-updates:** set `auto_update: false` in
   `config.local.yaml`. The launcher still supervises the monitor, it just
   stops checking for new commits.
@@ -608,10 +620,11 @@ not your real password).
 
 ## Status & roadmap
 
-- **Current:** v0.7.1 — six dashboard pages, device tracking with
+- **Current:** v0.8.0 — six dashboard pages, device tracking with
   auto-identification, latency/speed/outage history, the down detector
   with vendor status feeds, Wake-on-LAN, login, the auto-updating
-  launcher, and per-unit Deco restarts from the System page.
+  launcher, per-unit Deco restarts from the System page, and a web
+  console on the System page (launcher commands + log tail).
 - **Alerting is not built yet.** `app/notifiers.py` has a small registry
   — `notify(event)` fans an event dict out to every registered notifier,
   and the collectors already call it on service down/recovery and outage
