@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>North Star Monitor — Devices</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">&#9733;</div>
+    <div class="title">
+      <h1>North Star <span>Monitor</span></h1>
+      <p>Home network &middot; Deco mesh &middot; 192.168.68.0/24</p>
+    </div>
+    <div class="header-right">
+      <span class="pill" id="net-pill"><span class="dot ok" id="net-dot"></span><span id="net-text">Checking&hellip;</span></span>
+      <span class="pill" id="svc-pill"><span class="dot unknown" id="svc-dot"></span><span id="svc-text">Services&hellip;</span></span>
+      <span class="updated" id="updated"></span>
+    </div>
+  </header>
+
+  <nav class="main-nav" id="main-nav" aria-label="Dashboard pages"></nav>
+
+  <section class="card">
+    <h2>Devices</h2>
+    <p class="hint">Scanned every 2 minutes. Devices name themselves from mDNS, NetBIOS, DNS, or their hardware vendor &mdash; a name in config.yaml always overrides the discovered one.</p>
+    <div class="device-tabs" role="tablist" aria-label="Filter devices">
+      <button class="tab active" data-filter="online" onclick="setDeviceFilter('online', this)">Connected (<span id="count-online">0</span>)</button>
+      <button class="tab" data-filter="offline" onclick="setDeviceFilter('offline', this)">Disconnected (<span id="count-offline">0</span>)</button>
+      <button class="tab" data-filter="all" onclick="setDeviceFilter('all', this)">All devices (<span id="count-all">0</span>)</button>
+      <button class="ghost sweep-btn" id="btn-sweep" onclick="sweepOffline()">Sweep offline</button>
+    </div>
+    <div id="sweep-msg" class="sweep-msg" style="display:none"></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Device</th><th>IP</th><th>MAC</th><th>Status</th><th>Last seen</th><th></th></tr></thead>
+        <tbody id="device-rows"><tr><td colspan="6" class="empty">Loading&hellip;</td></tr></tbody>
+      </table>
+    </div>
+    <p class="table-hint">Scroll sideways to see all columns.</p>
+  </section>
+
+  <footer>North Star Monitor v1.8 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span><button class="ghost footer-btn" id="btn-check-updates" style="display:none" onclick="checkUpdates()">Check for updates</button><span id="update-check-info" style="display:none"></span></footer>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+'use strict';
+// Devices: filter tabs + sweep + table. Moved as-is from the v1.7 dashboard.
+
+const SRC_LABELS = { mdns: 'mDNS', netbios: 'NetBIOS', rdns: 'DNS', oui: 'Vendor' };
+
+function deviceRow(d) {
+  const isSynthetic = d.mac.startsWith('ip:');
+  const macDisplay = isSynthetic ? '—' : d.mac;
+  // Effective name: manual config name wins, then the discovered name,
+  // then "Unknown device". Auto-discovered names carry a source tag.
+  let name;
+  if (d.name) {
+    name = esc(d.name);
+  } else if (d.discovered_name) {
+    const tag = SRC_LABELS[d.name_source]
+      ? '<span class="src-tag">' + esc(SRC_LABELS[d.name_source]) + '</span>' : '';
+    name = esc(d.discovered_name) + tag;
+  } else {
+    name = '<span class="unknown">Unknown device</span>';
+  }
+  const wolBtn = (d.wol && !isSynthetic)
+    ? '<button class="ghost" onclick="wake(\'' + esc(d.mac) + '\', this)">Wake</button>'
+    : '';
+  return '<tr class="' + (d.online ? '' : 'offline') + '">' +
+    '<td class="name-cell">' + name + '</td>' +
+    '<td class="mono">' + esc(d.ip || '—') + '</td>' +
+    '<td class="mono">' + esc(macDisplay) + '</td>' +
+    '<td><span class="status-cell"><span class="dot ' + (d.online ? 'ok' : '') + '" style="' + (d.online ? '' : 'background:#64748b') + '"></span>' + (d.online ? 'Online' : 'Offline') + '</span></td>' +
+    '<td>' + relTime(d.last_seen) + '</td>' +
+    '<td>' + wolBtn + '</td></tr>';
+}
+
+// ---------- device filter tabs ----------
+// Filtering is client-side on the last fetched list — no extra API calls.
+// The tab choice survives the 30s refresh cycle; default is Connected.
+let deviceFilter = 'online';
+let lastDevices = [];
+
+function setDeviceFilter(filter, btn) {
+  deviceFilter = filter;
+  document.querySelectorAll('.device-tabs .tab').forEach((t) => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderDevices();
+}
+
+function renderDevices() {
+  const online = lastDevices.filter((d) => d.online);
+  const offline = lastDevices.filter((d) => !d.online);
+  $('count-online').textContent = online.length;
+  $('count-offline').textContent = offline.length;
+  $('count-all').textContent = lastDevices.length;
+  const shown = deviceFilter === 'online' ? online
+    : deviceFilter === 'offline' ? offline : lastDevices;
+  const emptyText = deviceFilter === 'online'
+    ? 'No devices online — first scan runs at startup.'
+    : deviceFilter === 'offline'
+    ? 'No offline devices. Everything seen is up.'
+    : 'No devices seen yet — first scan runs at startup.';
+  $('device-rows').innerHTML = shown.map(deviceRow).join('') ||
+    '<tr><td colspan="6" class="empty">' + emptyText + '</td></tr>';
+  // The sweep button is only useful when something offline exists.
+  $('btn-sweep').disabled = offline.length === 0;
+}
+
+async function sweepOffline() {
+  const n = lastDevices.filter((d) => !d.online).length;
+  if (!n) return;
+  if (!confirm('Remove ' + n + ' offline device' + (n > 1 ? 's' : '') +
+      ' from the list? Configured devices are kept.')) return;
+  const btn = $('btn-sweep');
+  const msg = $('sweep-msg');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/devices/sweep-offline', { method: 'POST' });
+    msg.textContent = 'Removed ' + res.removed + ' offline device' +
+      (res.removed === 1 ? '' : 's') +
+      (res.kept_config ? ' (' + res.kept_config + ' configured device' +
+        (res.kept_config === 1 ? '' : 's') + ' kept)' : '') + '.';
+    msg.style.display = '';
+    lastDevices = await api('/api/devices');
+    renderDevices();
+  } catch (e) {
+    msg.textContent = 'Sweep failed: ' + e.message;
+    msg.style.display = '';
+  }
+  setTimeout(() => { msg.style.display = 'none'; }, 8000);
+}
+
+async function wake(mac, btn) {
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = 'Sending…';
+  try {
+    await api('/api/wol/' + encodeURIComponent(mac), { method: 'POST' });
+    btn.textContent = 'Sent ✓';
+    setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 3000);
+  } catch (e) {
+    btn.textContent = 'Failed';
+    setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 3000);
+    alert('Wake-on-LAN failed: ' + e.message);
+  }
+}
+
+async function refreshDevicesPage() {
+  await refreshShared();
+  try {
+    lastDevices = await api('/api/devices');
+    renderDevices();
+  } catch (e) { console.error('devices:', e); }
+}
+
+refreshDevicesPage();
+setInterval(refreshDevicesPage, 30000);
+</script>
+</body>
+</html>
