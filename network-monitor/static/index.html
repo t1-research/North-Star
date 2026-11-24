@@ -77,7 +77,7 @@
   /* ---------- stat cards ---------- */
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
   @media (max-width: 900px) { .stats { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 520px) { .stats { grid-template-columns: 1fr; } }
+  @media (max-width: 400px) { .stats { grid-template-columns: 1fr; } }
   .stat {
     background: linear-gradient(160deg, var(--card), var(--card-2));
     border: 1px solid var(--border); border-radius: var(--radius);
@@ -169,6 +169,64 @@
 
   footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 8px; }
   footer span { color: var(--teal); }
+
+  /* ---------- responsive (phones) ---------- */
+  /* Device tables scroll sideways instead of overflowing the viewport;
+     the table keeps every column — nothing is hidden on mobile. */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-scroll table { min-width: 620px; }
+  .table-scroll::-webkit-scrollbar { height: 8px; }
+  .table-scroll::-webkit-scrollbar-thumb { background: rgba(20, 184, 166, 0.4); border-radius: 4px; }
+  .table-scroll::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
+  .table-hint { display: none; color: var(--muted); font-size: 12px; margin-top: 8px; text-align: center; }
+
+  /* ---------- device filter tabs ---------- */
+  .device-tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+  .device-tabs .tab {
+    background: transparent; color: var(--muted); font-weight: 600; font-size: 13px;
+    padding: 10px 14px; border-radius: 10px; border: 1px solid transparent;
+    min-height: 44px;
+  }
+  .device-tabs .tab:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+  .device-tabs .tab.active {
+    color: var(--teal); background: var(--teal-dim);
+    border-color: rgba(20, 184, 166, 0.5);
+  }
+  .device-tabs .sweep-btn { margin-left: auto; }
+  .sweep-msg { color: var(--muted); font-size: 13px; margin: -6px 0 12px; }
+
+  .footer-btn { margin-left: 10px; vertical-align: middle; }
+
+  @media (max-width: 640px) {
+    body { padding: 16px 12px 32px; }
+    header { gap: 10px; margin-bottom: 16px; }
+    .logo { width: 40px; height: 40px; font-size: 20px; border-radius: 10px; }
+    .title h1 { font-size: 21px; }
+    .header-right { width: 100%; margin-left: 0; gap: 8px; }
+    .pill { padding: 6px 10px; font-size: 12px; }
+    .updated { display: none; }
+    button { min-height: 44px; }
+    button.ghost { min-height: 44px; padding: 8px 14px; }
+    .card { padding: 16px; }
+    .chart-box { height: 200px; }
+    .stat { padding: 14px 16px; }
+    .stat .value { font-size: 26px; }
+    .table-hint { display: block; }
+    /* Sticky device-name column so rows stay readable while scrolling. */
+    .table-scroll th:first-child, .table-scroll td:first-child {
+      position: sticky; left: 0; background: var(--card); z-index: 1;
+      box-shadow: 1px 0 0 var(--border);
+    }
+    .table-scroll th:first-child { z-index: 2; }
+    .table-scroll th, .table-scroll td { padding: 9px 8px; }
+    .table-scroll table { font-size: 13px; }
+    .table-scroll .mono { font-size: 12px; }
+    .event { gap: 10px; }
+    .event > div { min-width: 0; }
+    .event .detail { overflow-wrap: break-word; }
+    .service-card .svc-feed, .service-card .svc-checked { overflow-wrap: break-word; }
+    footer { line-height: 2; }
+  }
 </style>
 </head>
 <body>
@@ -228,10 +286,20 @@
   <section class="card">
     <h2>Devices</h2>
     <p class="hint">Scanned every 2 minutes. Devices name themselves from mDNS, NetBIOS, DNS, or their hardware vendor &mdash; a name in config.yaml always overrides the discovered one.</p>
-    <table>
-      <thead><tr><th>Device</th><th>IP</th><th>MAC</th><th>Status</th><th>Last seen</th><th></th></tr></thead>
-      <tbody id="device-rows"><tr><td colspan="6" class="empty">Loading&hellip;</td></tr></tbody>
-    </table>
+    <div class="device-tabs" role="tablist" aria-label="Filter devices">
+      <button class="tab active" data-filter="online" onclick="setDeviceFilter('online', this)">Connected (<span id="count-online">0</span>)</button>
+      <button class="tab" data-filter="offline" onclick="setDeviceFilter('offline', this)">Disconnected (<span id="count-offline">0</span>)</button>
+      <button class="tab" data-filter="all" onclick="setDeviceFilter('all', this)">All devices (<span id="count-all">0</span>)</button>
+      <button class="ghost sweep-btn" id="btn-sweep" onclick="sweepOffline()">Sweep offline</button>
+    </div>
+    <div id="sweep-msg" class="sweep-msg" style="display:none"></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Device</th><th>IP</th><th>MAC</th><th>Status</th><th>Last seen</th><th></th></tr></thead>
+        <tbody id="device-rows"><tr><td colspan="6" class="empty">Loading&hellip;</td></tr></tbody>
+      </table>
+    </div>
+    <p class="table-hint">Scroll sideways to see all columns.</p>
   </section>
 
   <section class="card">
@@ -246,7 +314,7 @@
     <div id="event-list"><div class="empty">Loading&hellip;</div></div>
   </section>
 
-  <footer>North Star Monitor v1.6 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span></footer>
+  <footer>North Star Monitor v1.7 &middot; <span id="footer-version"></span> &middot; LAN-only &middot; data stored locally in <span>data/monitor.db</span><button class="ghost footer-btn" id="btn-check-updates" style="display:none" onclick="checkUpdates()">Check for updates</button><span id="update-check-info" style="display:none"></span></footer>
 </div>
 
 <script>
@@ -295,6 +363,36 @@ async function api(path, opts) {
   if (r.status === 401) { window.location.href = '/login'; throw new Error('not authenticated'); }
   if (!r.ok) throw new Error(path + ' -> HTTP ' + r.status);
   return r.json();
+}
+
+// ---------- device rows (shared by the online table and the Offline section) ----------
+const SRC_LABELS = { mdns: 'mDNS', netbios: 'NetBIOS', rdns: 'DNS', oui: 'Vendor' };
+
+function deviceRow(d) {
+  const isSynthetic = d.mac.startsWith('ip:');
+  const macDisplay = isSynthetic ? '—' : d.mac;
+  // Effective name: manual config name wins, then the discovered name,
+  // then "Unknown device". Auto-discovered names carry a source tag.
+  let name;
+  if (d.name) {
+    name = esc(d.name);
+  } else if (d.discovered_name) {
+    const tag = SRC_LABELS[d.name_source]
+      ? '<span class="src-tag">' + esc(SRC_LABELS[d.name_source]) + '</span>' : '';
+    name = esc(d.discovered_name) + tag;
+  } else {
+    name = '<span class="unknown">Unknown device</span>';
+  }
+  const wolBtn = (d.wol && !isSynthetic)
+    ? '<button class="ghost" onclick="wake(\'' + esc(d.mac) + '\', this)">Wake</button>'
+    : '';
+  return '<tr class="' + (d.online ? '' : 'offline') + '">' +
+    '<td class="name-cell">' + name + '</td>' +
+    '<td class="mono">' + esc(d.ip || '—') + '</td>' +
+    '<td class="mono">' + esc(macDisplay) + '</td>' +
+    '<td><span class="status-cell"><span class="dot ' + (d.online ? 'ok' : '') + '" style="' + (d.online ? '' : 'background:#64748b') + '"></span>' + (d.online ? 'Online' : 'Offline') + '</span></td>' +
+    '<td>' + relTime(d.last_seen) + '</td>' +
+    '<td>' + wolBtn + '</td></tr>';
 }
 
 // ---------- charts ----------
@@ -390,6 +488,34 @@ async function refreshCharts() {
   } catch (e) { console.error('speed chart:', e); }
 }
 
+// ---------- footer: last/next update check (launcher only) ----------
+// Times come from /api/status on each 30s refresh; a 1s tick keeps the
+// "next check in …" countdown live between refreshes.
+let updateCheckInfo = null;
+
+function fmtCountdown(secs) {
+  if (secs == null) return '';
+  if (secs <= 0) return 'any moment';
+  if (secs < 60) return 'in ' + secs + 's';
+  const m = Math.floor(secs / 60);
+  if (m < 60) return 'in ' + m + ' min';
+  return 'in ' + Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+}
+
+function renderUpdateCheckInfo() {
+  const el = $('update-check-info');
+  if (!updateCheckInfo) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  const last = updateCheckInfo.last_check_ts
+    ? 'Last check: ' + relTime(updateCheckInfo.last_check_ts)
+    : 'Last check: —';
+  const nextSecs = updateCheckInfo.next_check_ts
+    ? updateCheckInfo.next_check_ts - Math.floor(Date.now() / 1000)
+    : null;
+  el.textContent = ' · ' + last + (nextSecs == null ? '' : ' · Next check ' + fmtCountdown(nextSecs));
+}
+setInterval(renderUpdateCheckInfo, 1000);
+
 // ---------- status, devices, events ----------
 async function refreshAll() {
   try {
@@ -452,40 +578,18 @@ async function refreshAll() {
     // footer version (commit SHA from /api/status, or "dev build" outside a git checkout)
     $('footer-version').textContent = !st.version ? '' : (st.version === 'dev' ? 'dev build' : 'commit ' + st.version);
 
+    // "Check for updates" only exists when a launcher supervises the app.
+    $('btn-check-updates').style.display = st.managed ? '' : 'none';
+    // Footer update-check times (launcher only; null when standalone).
+    updateCheckInfo = st.update_check || null;
+    renderUpdateCheckInfo();
+
     $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   } catch (e) { console.error('status:', e); }
 
   try {
-    const devices = await api('/api/devices');
-    const SRC_LABELS = { mdns: 'mDNS', netbios: 'NetBIOS', rdns: 'DNS', oui: 'Vendor' };
-    const rows = devices.map((d) => {
-      const isSynthetic = d.mac.startsWith('ip:');
-      const macDisplay = isSynthetic ? '—' : d.mac;
-      // Effective name: manual config name wins, then the discovered name,
-      // then "Unknown device". Auto-discovered names carry a source tag.
-      let name;
-      if (d.name) {
-        name = esc(d.name);
-      } else if (d.discovered_name) {
-        const tag = SRC_LABELS[d.name_source]
-          ? '<span class="src-tag">' + esc(SRC_LABELS[d.name_source]) + '</span>' : '';
-        name = esc(d.discovered_name) + tag;
-      } else {
-        name = '<span class="unknown">Unknown device</span>';
-      }
-      const wolBtn = (d.wol && !isSynthetic)
-        ? '<button class="ghost" onclick="wake(\'' + esc(d.mac) + '\', this)">Wake</button>'
-        : '';
-      return '<tr class="' + (d.online ? '' : 'offline') + '">' +
-        '<td class="name-cell">' + name + '</td>' +
-        '<td class="mono">' + esc(d.ip || '—') + '</td>' +
-        '<td class="mono">' + esc(macDisplay) + '</td>' +
-        '<td><span class="status-cell"><span class="dot ' + (d.online ? 'ok' : '') + '" style="' + (d.online ? '' : 'background:#64748b') + '"></span>' + (d.online ? 'Online' : 'Offline') + '</span></td>' +
-        '<td>' + relTime(d.last_seen) + '</td>' +
-        '<td>' + wolBtn + '</td></tr>';
-    }).join('');
-    $('device-rows').innerHTML = rows ||
-      '<tr><td colspan="6" class="empty">No devices seen yet — first scan runs at startup.</td></tr>';
+    lastDevices = await api('/api/devices');
+    renderDevices();
   } catch (e) { console.error('devices:', e); }
 
   try {
@@ -555,7 +659,116 @@ async function refreshAll() {
   } catch (e) { console.error('events:', e); }
 }
 
+// ---------- device filter tabs ----------
+// Filtering is client-side on the last fetched list — no extra API calls.
+// The tab choice survives the 30s refresh cycle; default is Connected.
+let deviceFilter = 'online';
+let lastDevices = [];
+
+function setDeviceFilter(filter, btn) {
+  deviceFilter = filter;
+  document.querySelectorAll('.device-tabs .tab').forEach((t) => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderDevices();
+}
+
+function renderDevices() {
+  const online = lastDevices.filter((d) => d.online);
+  const offline = lastDevices.filter((d) => !d.online);
+  $('count-online').textContent = online.length;
+  $('count-offline').textContent = offline.length;
+  $('count-all').textContent = lastDevices.length;
+  const shown = deviceFilter === 'online' ? online
+    : deviceFilter === 'offline' ? offline : lastDevices;
+  const emptyText = deviceFilter === 'online'
+    ? 'No devices online — first scan runs at startup.'
+    : deviceFilter === 'offline'
+    ? 'No offline devices. Everything seen is up.'
+    : 'No devices seen yet — first scan runs at startup.';
+  $('device-rows').innerHTML = shown.map(deviceRow).join('') ||
+    '<tr><td colspan="6" class="empty">' + emptyText + '</td></tr>';
+  // The sweep button is only useful when something offline exists.
+  $('btn-sweep').disabled = offline.length === 0;
+}
+
+async function sweepOffline() {
+  const n = lastDevices.filter((d) => !d.online).length;
+  if (!n) return;
+  if (!confirm('Remove ' + n + ' offline device' + (n > 1 ? 's' : '') +
+      ' from the list? Configured devices are kept.')) return;
+  const btn = $('btn-sweep');
+  const msg = $('sweep-msg');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/devices/sweep-offline', { method: 'POST' });
+    msg.textContent = 'Removed ' + res.removed + ' offline device' +
+      (res.removed === 1 ? '' : 's') +
+      (res.kept_config ? ' (' + res.kept_config + ' configured device' +
+        (res.kept_config === 1 ? '' : 's') + ' kept)' : '') + '.';
+    msg.style.display = '';
+    lastDevices = await api('/api/devices');
+    renderDevices();
+  } catch (e) {
+    msg.textContent = 'Sweep failed: ' + e.message;
+    msg.style.display = '';
+  }
+  setTimeout(() => { msg.style.display = 'none'; }, 8000);
+}
+
 // ---------- actions ----------
+async function checkUpdates() {
+  const btn = $('btn-check-updates');
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  let r;
+  try {
+    r = await fetch('/api/check-updates', { method: 'POST' });
+  } catch (e) {
+    btn.textContent = 'Couldn’t reach server';
+    setTimeout(() => { btn.disabled = false; btn.textContent = 'Check for updates'; }, 4000);
+    return;
+  }
+  if (r.status === 401) { window.location.href = '/login'; return; }
+  if (r.status === 409) {
+    // No launcher — the button is hidden then, but handle it anyway.
+    btn.textContent = 'Updates need the launcher';
+    setTimeout(() => { btn.disabled = false; btn.textContent = 'Check for updates'; }, 5000);
+    return;
+  }
+  if (!r.ok) {
+    btn.textContent = 'Check failed — try again';
+    setTimeout(() => { btn.disabled = false; btn.textContent = 'Check for updates'; }, 4000);
+    return;
+  }
+  // Poll for a version change. The server goes down briefly while the
+  // child restarts, so connection errors just mean "keep waiting".
+  const oldVersion = $('footer-version').textContent;
+  const deadline = Date.now() + 45000;
+  const poll = async () => {
+    try {
+      const st = await api('/api/status');
+      updateCheckInfo = st.update_check || null;
+      renderUpdateCheckInfo();
+      const v = !st.version ? '' : (st.version === 'dev' ? 'dev build' : 'commit ' + st.version);
+      if (v !== oldVersion) {
+        btn.textContent = 'Updated — reloading…';
+        setTimeout(() => window.location.reload(), 1000);
+        return;
+      }
+    } catch (e) {
+      if (e.message === 'not authenticated') return; // api() already redirected
+      // Otherwise the server is mid-restart — keep polling.
+    }
+    if (Date.now() >= deadline) {
+      btn.textContent = 'You’re up to date';
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Check for updates'; }, 4000);
+      return;
+    }
+    setTimeout(poll, 2000);
+  };
+  setTimeout(poll, 2000);
+}
+
 async function logout() {
   try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { /* server unreachable — still leave */ }
   window.location.href = '/login';
