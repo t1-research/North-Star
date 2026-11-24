@@ -62,11 +62,11 @@ function renderNav() {
   const nav = $('main-nav');
   if (!nav) return;
   const current = window.location.pathname.replace(/\/$/, '') || '/';
-  nav.innerHTML = NAV_PAGES.map((p) =>
+  nav.innerHTML = '<span class="nav-links">' + NAV_PAGES.map((p) =>
     '<a href="' + p.path + '"' +
     (p.path === current ? ' class="active" aria-current="page"' : '') +
     '>' + p.label + '</a>'
-  ).join('') + '<button class="ghost nav-logout" onclick="logout()">Log out</button>';
+  ).join('') + '</span><button class="ghost nav-logout" onclick="logout()">Log out</button>';
 }
 
 // ---------- charts ----------
