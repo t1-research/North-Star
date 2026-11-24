@@ -1,17 +1,33 @@
 # North Star
 
 A self-hosted home infrastructure platform — network monitoring, CI/CD, and
-dev services, built from scratch in Python.
+dev services, built from scratch in Python. One repo, one always-on PC,
+everything that runs the home lab.
 
 ## Projects
 
-- **network-monitor/** — North Star Monitor: live device tracking, latency
-  graphs, speed test history, outage logging, and Wake-on-LAN on one web
-  dashboard. Runs on the always-on gaming PC. See
-  [network-monitor/README.md](network-monitor/README.md) for setup.
+- **network-monitor/** — North Star Monitor: a home network monitoring
+  dashboard. Live device tracking with automatic identification, latency
+  graphs, speed test history, outage logging, a down detector for the
+  services the household uses, Wake-on-LAN, and per-unit restarts of the
+  Deco mesh — on six dashboard pages (Home, Devices, Speed Tests,
+  Statistics, Services, System). It ships with an auto-updating launcher:
+  push a change and the running monitor restarts itself with the new
+  code. See [network-monitor/README.md](network-monitor/README.md) for
+  the full setup guide, including the
+  [field deployment reference](network-monitor/README.md#field-deployment-reference)
+  — the exact network (CAX30 → Deco mesh → monitor host) it is fielded
+  on.
 
-More services coming — this repo is the home for everything running the home
-lab.
+More services coming — this repo is the home for everything running the
+home lab.
+
+## Layout
+
+```
+network-monitor/   the monitor: FastAPI app, SQLite storage, launcher, tests
+.github/workflows/ CI (smoke test on Ubuntu + Windows)
+```
 
 ## Auto-updates
 
@@ -26,5 +42,5 @@ with local edits.
 
 GitHub Actions runs on every push and pull request. The network monitor job
 (`.github/workflows/ci-network-monitor.yml`) installs the dependencies and
-runs a smoke test — starts the server and hits every API endpoint plus the
-dashboard — on both Ubuntu and Windows.
+runs a byte-compile check plus a smoke test — starts the server and hits
+every page and API endpoint — on both Ubuntu and Windows (Python 3.12).
