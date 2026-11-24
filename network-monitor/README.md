@@ -1,9 +1,10 @@
 # North Star Monitor
 
 A home network monitoring dashboard for the Deco mesh at 192.168.68.0/24 —
-device tracking, latency graphs, speed test history, outage logging, a down
-detector for the services the household uses, and Wake-on-LAN, all on one
-web page. Phase 1 of the "Deco app on steroids" plan.
+device tracking, latency graphs, speed test history, outage detection, a down
+detector for the services the household uses, and Wake-on-LAN, across five
+dashboard pages (Home, Devices, Speed Tests, Statistics, Services). Phase 1 of the
+"Deco app on steroids" plan.
 
 **LAN-only by design.** The dashboard is plain HTTP with no encryption.
 A login password is optional — set one with `python set_password.py`
@@ -23,7 +24,7 @@ it remotely, use Tailscale (your PC's 100.x address, same port 8080).
 | Wake-on-LAN | Magic packet buttons for devices with `wol: true` in config.yaml |
 | Login (optional) | Password set with `python set_password.py`; session cookie lasts 7 days; 5 failed logins lock an IP out for 5 minutes |
 | Auto-updates (launcher) | `launcher.py` polls GitHub, pulls new commits, and restarts the monitor — see below. The dashboard footer has a Check for updates button (launcher only) to run a check immediately, and shows when the last check ran and when the next one is due |
-| Dashboard | Status cards, 24h latency chart, 7d speed chart, device table, service status grid, event log. Responsive layout for phones and desktop; the device list has Connected / Disconnected / All filter tabs, and a Sweep offline button removes stale offline rows (config-defined devices are never swept) |
+| Dashboard | Five pages sharing one stylesheet and script (`static/style.css`, `static/app.js`): Home (status cards, latest speed test, services at a glance), Devices (Connected / Disconnected / All filter tabs, Sweep offline button removes stale offline rows — config-defined devices are never swept), Speed Tests (7-day speed chart, on-demand test, recent-tests table), Statistics (24h latency chart, per-service uptime table), Services (down detector grid). Responsive layout for phones and desktop |
 
 Data lives in `data/monitor.db` (SQLite). Delete it any time to start fresh.
 
@@ -96,9 +97,12 @@ timeout, or a DNS/connection failure is down.
   shows as "unknown" — you get one internet outage, not eight false service
   outages. Checks skipped this way don't count against a service's 24h
   uptime %.
-- **Dashboard:** the Services section shows a card per service — status dot
+- **Dashboard:** the Services page shows a card per service — status dot
   (green up / red down / grey unknown), last response time, and 24h uptime.
-  The header pill turns red while any service is down.
+  The header pill turns red while any service is down. (Outage detection
+  still runs in the background — it powers the Internet status card and
+  the unknown-during-outage behavior — but the event log is no longer
+  displayed anywhere.)
 - **API:** `GET /api/services` returns the current status per service;
   `GET /api/services/history?hours=24` returns the raw check rows.
 
@@ -123,9 +127,9 @@ Notes:
 - The hash lives in `config.local.yaml`, which is NOT tracked by git —
   it never goes to the public repo. Never put a hash (or a password) in
   `config.yaml`.
-- A signed-in session lasts **7 days**; the Log out button in the
-  dashboard header signs out immediately. Restarting the monitor signs
-  everyone out (sessions live in memory only).
+- A signed-in session lasts **7 days**; the Log out button in the nav bar
+  signs out immediately. Restarting the monitor signs everyone out
+  (sessions live in memory only).
 - **Lockout:** 5 failed logins from one IP within 10 minutes locks that
   IP out for 5 minutes (further attempts get a 429). A successful login
   clears the count.
@@ -267,7 +271,13 @@ app/
   wol.py        Wake-on-LAN magic packet
   config.py     config loading
 static/
-  index.html    the dashboard (vanilla JS + Chart.js via CDN)
+  index.html    Home page (status cards, latest speed test, services at a glance)
+  devices.html  Devices page (filter tabs + sweep + table)
+  speed-tests.html  Speed Tests page (speed chart, on-demand test, history)
+  statistics.html   Statistics page (latency chart, service uptime table)
+  services.html Services page (down detector grid)
+  style.css     shared stylesheet for all dashboard pages
+  app.js        shared JS: nav, charts, header/footer status, update check
   login.html    the login page (no external assets — works with zero internet)
 tests/
   smoke_test.py CI smoke test: boots the server, hits every endpoint
@@ -279,7 +289,11 @@ data/
 
 | Endpoint | What it does |
 |---|---|
-| `GET /` | Dashboard |
+| `GET /` | Home dashboard |
+| `GET /devices` | Devices page |
+| `GET /speed-tests` | Speed Tests page |
+| `GET /statistics` | Statistics page |
+| `GET /services` | Services page |
 | `GET /login` | Login page (redirects to `/` when no password is set or already signed in) |
 | `POST /api/login` | Sign in with JSON `{"password": "..."}` — sets the 7-day session cookie |
 | `POST /api/logout` | Sign out — revokes the session and clears the cookie |
