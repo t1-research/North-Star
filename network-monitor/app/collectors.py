@@ -228,6 +228,17 @@ class Collectors:
             self._svc_next[name] = now_mono + services.service_interval(svc, self.cfg)
             up, code, ms = services.check_service(url)
             db.insert_service_check(self.db_path, now, name, 1 if up else 0, code, ms)
+            # Official status feed (display only — never affects up/down).
+            # Fetched on the same cadence as the health check, whether the
+            # check passed or not; a failed fetch keeps the last known
+            # feed state, it never blanks it.
+            feed_url = svc.get("status_api_url")
+            if feed_url:
+                feed = services.fetch_status_feed(feed_url)
+                if feed is not None:
+                    db.upsert_service_status(
+                        self.db_path, name, now,
+                        feed["indicator"], feed["description"], feed["incidents"])
             etype = services.down_event_type(name)
             if up:
                 self._svc_failures[name] = 0
