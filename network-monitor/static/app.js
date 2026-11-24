@@ -435,6 +435,152 @@ async function restartSelectedDecos() {
   setTimeout(poll, 5000);
 }
 
+// ---------- web console (System page) ----------
+// The launcher's console, in the browser: type commands (or use the
+// quick buttons) and the app drops trigger files for the launcher —
+// the same mechanism as the footer update button. The log pane tails
+// data/launcher.log, polled every 2s. Guarded like the Deco section:
+// every function no-ops when the section's elements aren't on the page
+// (it only exists on /system).
+let consolePollTimer = null;
+let consoleLogLines = []; // log lines shown so far (echoes not included)
+let consoleStopped = false; // quit was sent — the server is gone, stop polling
+let consoleRestarting = false; // restart sent — waiting for the server to come back
+
+function consoleAppendLine(text, cls) {
+  const pane = $('console-output');
+  if (!pane) return;
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  div.textContent = text;
+  pane.appendChild(div);
+  // Keep the last ~200 lines client-side so the DOM stays small.
+  while (pane.children.length > 200) pane.removeChild(pane.firstChild);
+  pane.scrollTop = pane.scrollHeight;
+}
+
+function consoleMergeLogLines(tail) {
+  // Append only lines newer than what we already show. The tail is a
+  // sliding window, so match the overlap: the longest suffix of what
+  // we have that equals a prefix of the tail. (If the launcher trims
+  // its log file mid-session the match fails and the tail replays
+  // once — cosmetic; the pane caps at 200 lines either way.)
+  const maxK = Math.min(consoleLogLines.length, tail.length, 50);
+  let k = 0;
+  for (let n = maxK; n > 0; n--) {
+    let match = true;
+    for (let i = 0; i < n; i++) {
+      if (consoleLogLines[consoleLogLines.length - n + i] !== tail[i]) { match = false; break; }
+    }
+    if (match) { k = n; break; }
+  }
+  tail.slice(k).forEach((line) => {
+    consoleLogLines.push(line);
+    consoleAppendLine(line);
+  });
+  if (consoleLogLines.length > 500) consoleLogLines = consoleLogLines.slice(-500);
+}
+
+async function consolePollLog() {
+  if (consoleStopped || !$('console-output')) return;
+  try {
+    const data = await api('/api/console/log?lines=100');
+    consoleMergeLogLines(data.lines || []);
+  } catch (e) {
+    // During a restart the server drops for a few seconds — expected,
+    // not an error. The restart waiter handles the "back online" line.
+    if (e.message === 'not authenticated') return; // api() already redirected
+  }
+}
+
+function renderConsoleManaged(st) {
+  const hint = $('console-unmanaged-hint');
+  if (!hint) return;
+  hint.style.display = st.managed ? 'none' : '';
+}
+
+function initConsole() {
+  if (!$('console-output')) return; // not the System page
+  consolePollLog();
+  consolePollTimer = setInterval(consolePollLog, 2000);
+}
+
+function consoleWaitForRestart() {
+  // The child restarts in a few seconds; the server drops briefly.
+  // Poll /api/status until it answers twice in a row (same pattern as
+  // the Deco reboot waiter), then note the recovery in the pane.
+  if (consoleRestarting) return;
+  consoleRestarting = true;
+  consoleAppendLine('Restarting…', 'console-info');
+  const deadline = Date.now() + 60000;
+  let okStreak = 0;
+  const poll = async () => {
+    try {
+      await api('/api/status');
+      okStreak += 1;
+    } catch (e) {
+      if (e.message === 'not authenticated') { consoleRestarting = false; return; }
+      okStreak = 0;
+    }
+    if (okStreak >= 2) {
+      consoleAppendLine('Monitor back online.', 'console-info');
+      consoleRestarting = false;
+      consolePollLog(); // pick up the restart lines promptly
+      return;
+    }
+    if (Date.now() >= deadline) {
+      consoleAppendLine('Still waiting for the monitor — it may have failed to restart. Check the PC console.', 'console-error');
+      consoleRestarting = false;
+      return;
+    }
+    setTimeout(poll, 2000);
+  };
+  setTimeout(poll, 2000);
+}
+
+async function sendConsoleCommand(cmd) {
+  if (!$('console-output')) return;
+  cmd = (cmd || '').trim().toLowerCase().split(/\s+/)[0] || '';
+  if (!cmd) return;
+  if (cmd === 'quit') {
+    if (!window.confirm('This stops the monitor completely — restart it on the PC with run_launcher.bat.')) return;
+  }
+  consoleAppendLine('> ' + cmd, 'console-echo');
+  let r;
+  try {
+    r = await fetch('/api/console/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: cmd }),
+    });
+  } catch (e) {
+    consoleAppendLine('Couldn’t reach the server — is the monitor still running?', 'console-error');
+    return;
+  }
+  if (r.status === 401) { window.location.href = '/login'; return; }
+  let data = {};
+  try { data = await r.json(); } catch (e) { /* non-JSON error body */ }
+  const msg = data.message || data.detail || ('HTTP ' + r.status);
+  consoleAppendLine(msg, r.ok ? 'console-info' : 'console-error');
+  if (!r.ok) return;
+  if (cmd === 'restart') consoleWaitForRestart();
+  if (cmd === 'quit') {
+    // The server is going away — stop polling instead of spamming
+    // failed requests at a dead server.
+    consoleStopped = true;
+    if (consolePollTimer) clearInterval(consolePollTimer);
+    consoleAppendLine('The monitor has stopped. Restart it on the PC with run_launcher.bat.', 'console-info');
+  }
+}
+
+function sendConsoleCommandFromInput() {
+  const input = $('console-input');
+  if (!input) return;
+  const cmd = input.value;
+  input.value = '';
+  sendConsoleCommand(cmd);
+}
+
 // ---------- actions ----------
 async function checkUpdates() {
   const btn = $('btn-check-updates');
